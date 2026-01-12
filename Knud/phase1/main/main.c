@@ -23,18 +23,17 @@
 volatile int led_level = 1;
 volatile bool temp_humid_sensor = true;
 int program_begun = false;
+volatile int BUTTON_PRESSED = 0;
 
 void red(), green(), blue(), purple(), yellow(), white(), cyan(), all_off();
 
 void interrupt_handler()
 {
-    if (program_begun) {
+    BUTTON_PRESSED = 1;
+    if (program_begun) { // main while loop has begun
         led_level = !led_level;
         temp_humid_sensor = !temp_humid_sensor;
-    } else {
-        
-    }
-    
+    }     
 }
 
 
@@ -118,44 +117,81 @@ void app_main(void)
     adc_oneshot_config_channel(adc_handle, ADC_CHANNEL_2, &chan_cfg);
 
    
-    // Startup sequence
-    //Tænder og slukker for LED 3 gange
-    for (int i = 0; i < 3; i++){
-        gpio_set_level(LED_PIN, 1);
-        vTaskDelay(pdMS_TO_TICKS(1000));
-        gpio_set_level(LED_PIN, 0);
-        vTaskDelay(pdMS_TO_TICKS(1000));
-    }
+    // // Startup sequence
+    // //Tænder og slukker for LED 3 gange
+    // for (int i = 0; i < 3; i++){
+    //     gpio_set_level(LED_PIN, 1);
+    //     vTaskDelay(pdMS_TO_TICKS(1000));
+    //     gpio_set_level(LED_PIN, 0);
+    //     vTaskDelay(pdMS_TO_TICKS(1000));
+    // }
 
-    //Cycle through RGB colours
-    red();
-    vTaskDelay(pdMS_TO_TICKS(1000));
-    green();
-    vTaskDelay(pdMS_TO_TICKS(1000));
-    blue();
-    vTaskDelay(pdMS_TO_TICKS(1000));
-    purple();
-    vTaskDelay(pdMS_TO_TICKS(1000));
-    yellow();
-    vTaskDelay(pdMS_TO_TICKS(1000));
-    white();
-    vTaskDelay(pdMS_TO_TICKS(1000));
-    cyan();
-    vTaskDelay(pdMS_TO_TICKS(1000));
-    all_off();
+    // //Cycle through RGB colours
+    // red();
+    // vTaskDelay(pdMS_TO_TICKS(1000));
+    // green();
+    // vTaskDelay(pdMS_TO_TICKS(1000));
+    // blue();
+    // vTaskDelay(pdMS_TO_TICKS(1000));
+    // purple();
+    // vTaskDelay(pdMS_TO_TICKS(1000));
+    // yellow();
+    // vTaskDelay(pdMS_TO_TICKS(1000));
+    // white();
+    // vTaskDelay(pdMS_TO_TICKS(1000));
+    // cyan();
+    // vTaskDelay(pdMS_TO_TICKS(1000));
+    // all_off();
     
 
 
 
 
 
+    // Light sensor calibration
+    int low_value = -1;
+    int high_value = -1;
+    
+    printf("Cover the thing and press the button\n");
+
+    while (true) {
+        if (low_value == -1 && BUTTON_PRESSED) {
+            adc_oneshot_read(adc_handle, ADC_CHANNEL_2, &low_value);
+            BUTTON_PRESSED = 0;
+            printf("thank you\n");
+            vTaskDelay(pdMS_TO_TICKS(50));
+
+            break;
+        }
+        vTaskDelay(pdMS_TO_TICKS(50));
+    }
+
+    printf("Stop covering the thing and press the button\n");
+
+    while (true) {
+        if (high_value == -1 && BUTTON_PRESSED) {
+            adc_oneshot_read(adc_handle, ADC_CHANNEL_2, &high_value);
+            BUTTON_PRESSED = 0;
+            printf("thank you again\n");
+            vTaskDelay(pdMS_TO_TICKS(50));
+
+            break;
+        }
+        vTaskDelay(pdMS_TO_TICKS(50));
+    }
+
+    printf("low value:  %d\nhigh value: %d\n", low_value, high_value);
+
+
+    int new_max_value = high_value - low_value;
+    int interval = new_max_value / 8; // divide by number of colours used
 
 
 
 
+    vTaskDelay(pdMS_TO_TICKS(1000));
 
-
-
+    program_begun = true;
 
     while (true) {
         gpio_set_level(LED_PIN, led_level);
@@ -256,6 +292,25 @@ void app_main(void)
             int adc_raw;
             adc_oneshot_read(adc_handle, ADC_CHANNEL_2, &adc_raw);
             printf("Value measured: %d\n", adc_raw);
+            int calibrated_measure = adc_raw - low_value;
+
+            if (calibrated_measure < interval * 1) {
+                all_off();
+            } else if (calibrated_measure < interval * 2) {
+                purple();
+            } else if (calibrated_measure < interval * 3) {
+                blue();
+            } else if (calibrated_measure < interval * 4) {
+                cyan();
+            } else if (calibrated_measure < interval * 5) {
+                green();
+            } else if (calibrated_measure < interval * 6) {
+                yellow();
+            } else if (calibrated_measure < interval * 7) {
+                red();
+            } else if (calibrated_measure < interval * 8) {
+                white();
+            } 
         }
     }
 }
