@@ -11,7 +11,7 @@
 
 #define LED_PIN GPIO_NUM_9
 #define BUTTON_PIN GPIO_NUM_4
-#define SDA_PIN GPIO_NUM_5 
+#define SDA_PIN GPIO_NUM_5
 #define SCL_PIN GPIO_NUM_6
 #define AM2320_ADDR 0x5C
 #define I2C_PORT 0
@@ -21,7 +21,7 @@
 
 
 volatile int led_level = 1;
-volatile bool temp_humid_sensor = true;
+volatile bool temp_humid_sensor = false;
 int program_begun = false;
 volatile int BUTTON_PRESSED = 0;
 
@@ -33,7 +33,7 @@ void interrupt_handler()
     if (program_begun) { // main while loop has begun
         led_level = !led_level;
         temp_humid_sensor = !temp_humid_sensor;
-    }     
+    }
 }
 
 
@@ -75,11 +75,11 @@ void app_main(void)
 
     // Configure Button
     gpio_config_t io_conf_ins = {
-        .pin_bit_mask = (1ULL << BUTTON_PIN), 
+        .pin_bit_mask = (1ULL << BUTTON_PIN),
         .mode = GPIO_MODE_INPUT,
         .pull_up_en = GPIO_PULLUP_DISABLE,
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        .intr_type = GPIO_INTR_POSEDGE
+        .intr_type = GPIO_INTR_NEGEDGE
     };
     gpio_config(&io_conf_ins);
 
@@ -116,55 +116,44 @@ void app_main(void)
 
     adc_oneshot_config_channel(adc_handle, ADC_CHANNEL_2, &chan_cfg);
 
-   
-    // // Startup sequence
-    // //Tænder og slukker for LED 3 gange
-    // for (int i = 0; i < 3; i++){
-    //     gpio_set_level(LED_PIN, 1);
-    //     vTaskDelay(pdMS_TO_TICKS(1000));
-    //     gpio_set_level(LED_PIN, 0);
-    //     vTaskDelay(pdMS_TO_TICKS(1000));
-    // }
+    gpio_set_level(LED_PIN, 0);
+    vTaskDelay(pdMS_TO_TICKS(1000));
 
-    // //Cycle through RGB colours
-    // red();
+    // Startup sequence
+    //Tænder og slukker for LED 3 gange
+    printf("Cycling Mode LED 3 times\n");
+    for (int i = 0; i < 3; i++){
+        gpio_set_level(LED_PIN, 1);
+        vTaskDelay(pdMS_TO_TICKS(1000));
+        gpio_set_level(LED_PIN, 0);
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+
+    //Cycle through RGB colours
+    printf("Cycling through RGB colours from lowest to highest\n");
+    // all_off();
     // vTaskDelay(pdMS_TO_TICKS(1000));
-    // green();
-    // vTaskDelay(pdMS_TO_TICKS(1000));
-    // blue();
-    // vTaskDelay(pdMS_TO_TICKS(1000));
-    // purple();
-    // vTaskDelay(pdMS_TO_TICKS(1000));
-    // yellow();
-    // vTaskDelay(pdMS_TO_TICKS(1000));
+    purple();
+    vTaskDelay(pdMS_TO_TICKS(1000));
+    blue();
+    vTaskDelay(pdMS_TO_TICKS(1000));
+    cyan();
+    vTaskDelay(pdMS_TO_TICKS(1000));
+    green();
+    vTaskDelay(pdMS_TO_TICKS(1000));
+    yellow();
+    vTaskDelay(pdMS_TO_TICKS(1000));
+    red();
+    vTaskDelay(pdMS_TO_TICKS(1000));
     // white();
     // vTaskDelay(pdMS_TO_TICKS(1000));
-    // cyan();
-    // vTaskDelay(pdMS_TO_TICKS(1000));
-    // all_off();
-    
 
-
-
+    all_off();
 
 
     // Light sensor calibration
     int low_value = -1;
     int high_value = -1;
-    
-    printf("Cover the thing and press the button\n");
-
-    while (true) {
-        if (low_value == -1 && BUTTON_PRESSED) {
-            adc_oneshot_read(adc_handle, ADC_CHANNEL_2, &low_value);
-            BUTTON_PRESSED = 0;
-            printf("thank you\n");
-            vTaskDelay(pdMS_TO_TICKS(50));
-
-            break;
-        }
-        vTaskDelay(pdMS_TO_TICKS(50));
-    }
 
     printf("Stop covering the thing and press the button\n");
 
@@ -180,11 +169,27 @@ void app_main(void)
         vTaskDelay(pdMS_TO_TICKS(50));
     }
 
+    vTaskDelay(pdMS_TO_TICKS(1000));
+
+    printf("Cover the thing and press the button\n");
+
+    while (true) {
+        if (low_value == -1 && BUTTON_PRESSED) {
+            adc_oneshot_read(adc_handle, ADC_CHANNEL_2, &low_value);
+            BUTTON_PRESSED = 0;
+            printf("thank you\n");
+            vTaskDelay(pdMS_TO_TICKS(50));
+
+            break;
+        }
+        vTaskDelay(pdMS_TO_TICKS(50));
+    }
+
     printf("low value:  %d\nhigh value: %d\n", low_value, high_value);
 
 
     int new_max_value = high_value - low_value;
-    int interval = new_max_value / 8; // divide by number of colours used
+    int interval = new_max_value / 6; // divide by number of colours used
 
 
 
@@ -253,36 +258,36 @@ void app_main(void)
 
             if (crc_code == crc_calc) {
                 printf("Temp: %.2f\n", (float)temp / 10);
-                // printf("Humid: %.2f%% \n", (float)humid /10);
+                printf("Humid: %.2f%% \n", (float)humid /10);
 
                 // RGB
-                if (temp < 230) {
-                    // purple
-                    gpio_set_level(RED_LED, 0);
-                    gpio_set_level(GREEN_LED, 1);
-                    gpio_set_level(BLUE_LED, 0);
-                }
-                else if (temp > 230 && temp < 240) {
-                    // green
-                    gpio_set_level(RED_LED, 1);
-                    gpio_set_level(GREEN_LED, 0);
-                    gpio_set_level(BLUE_LED, 1);
-                }
-                else if (temp > 240 && temp < 250) {
-                    // red
-                    gpio_set_level(RED_LED, 0);
-                    gpio_set_level(GREEN_LED, 1);
-                    gpio_set_level(BLUE_LED, 1);
-                }
-                else if (temp > 250) {
-                    // white
-                    gpio_set_level(RED_LED, 0);
-                    gpio_set_level(GREEN_LED, 0);
-                    gpio_set_level(BLUE_LED, 0);
+                switch (temp) {
+
+                case 220 ... 229:
+                    purple();
+                    break;
+                case 230 ... 239:
+                    blue();
+                    break;
+                case 240 ... 249:
+                    cyan();
+                    break;
+                case 250 ... 259:
+                    green();
+                    break;
+                case 260 ... 269:
+                    yellow();
+                    break;
+                case 270 ... 280:
+                    red();
+                    break;
+                default:
+                    all_off();
+                    break;
                 }
             }
         }
-        
+
 
         if (!temp_humid_sensor) {
             // Light sensor readout
@@ -291,27 +296,26 @@ void app_main(void)
             // Lav value = mørkt, høj value = lyst.
             int adc_raw;
             adc_oneshot_read(adc_handle, ADC_CHANNEL_2, &adc_raw);
-            printf("Value measured: %d\n", adc_raw);
+            printf("Light intensity: %d\n", adc_raw);
             int calibrated_measure = adc_raw - low_value;
 
             if (calibrated_measure < interval * 1) {
-                all_off();
-            } else if (calibrated_measure < interval * 2) {
                 purple();
-            } else if (calibrated_measure < interval * 3) {
+            } else if (calibrated_measure < interval * 2) {
                 blue();
-            } else if (calibrated_measure < interval * 4) {
+            } else if (calibrated_measure < interval * 3) {
                 cyan();
-            } else if (calibrated_measure < interval * 5) {
+            } else if (calibrated_measure < interval * 4) {
                 green();
-            } else if (calibrated_measure < interval * 6) {
+            } else if (calibrated_measure < interval * 5) {
                 yellow();
-            } else if (calibrated_measure < interval * 7) {
+            } else if (calibrated_measure < interval * 6) {
                 red();
-            } else if (calibrated_measure < interval * 8) {
-                white();
-            } 
+            }
         }
+
+    vTaskDelay(pdMS_TO_TICKS(1000)); // Wait for 1 second
+
     }
 }
 
