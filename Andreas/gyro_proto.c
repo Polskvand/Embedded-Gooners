@@ -8,16 +8,13 @@
 #define I2C_PORT        I2C_NUM_0
 #define I2C_SDA_PIN     21
 #define I2C_SCL_PIN     22
-#define I2C_FREQ_HZ     4000
+#define I2C_FREQ_HZ     400000
 
 #define MPU_ADDR        0x68
 
-// MPU6050 registre
-#define REG_WHO_AM_I    0x75
 #define REG_PWR_MGMT_1  0x6B
-#define REG_ACCEL_XOUT  0x3B  // start for accel/gyro burst read
+#define REG_ACCEL_XOUT  0x3B 
 
-static const char *TAG = "MPU6050";
 
 void i2c_master_init() {
   i2c_config_t conf = {
@@ -47,8 +44,6 @@ int16_t be16(const uint8_t *p) {  // big-endian to int16
 void app_main(void) {
     i2c_master_init();
 
-    uint8_t who = 0;
-    mpu_read_reg(REG_WHO_AM_I, &who, 1);
 
     // Væk MPU'en (clear sleep bit)
     mpu_write_reg(REG_PWR_MGMT_1, 0x00);
