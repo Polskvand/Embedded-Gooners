@@ -10,10 +10,11 @@
 #define I2C_SCL_PIN     22
 #define I2C_FREQ_HZ     400000
 
-#define MPU_ADDR        0x68
+#define REG_PWR_MGMT_1     0x6B
+#define REG_ACCEL_XOUT     0x3B
+#define REG_ACCEL_CONFIG   0x1C
 
-#define REG_PWR_MGMT_1  0x6B
-#define REG_ACCEL_XOUT  0x3B 
+
 
 
 void i2c_master_init() {
@@ -44,11 +45,32 @@ int16_t be16(const uint8_t *p) {  // big-endian to int16
 void app_main(void) {
     i2c_master_init();
 
-
-    // Væk MPU'en (clear sleep bit)
     mpu_write_reg(REG_PWR_MGMT_1, 0x00);
     vTaskDelay(pdMS_TO_TICKS(50));
 
+    int acc_range = 2;
+
+    float acc_scale;
+    switch acc_range {
+        case 4:
+            mpu_write_reg(REG_ACCEL_CONFIG, 0x08);
+            acc_scale = 8192.0f;
+            break;
+        case 8:
+            mpu_write_reg(REG_ACCEL_CONFIG, 0x10);
+            acc_scale = 4096.0f;
+            break;
+        case 16:
+            mpu_write_reg(REG_ACCEL_CONFIG, 0x18);
+            acc_scale = 2048.0f;
+        default:
+            mpu_write_reg(REG_ACCEL_CONFIG, 0x00);
+            acc_scale = 16384.0f;
+            break;
+    }
+    vTaskDelay(pdMS_TO_TICKS(10));
+
+    
     while (1) {
         uint8_t buf[14];
         mpu_read_reg(REG_ACCEL_XOUT, buf, sizeof(buf));
