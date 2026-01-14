@@ -11,7 +11,26 @@ void init_acc_pos(acc_pos *gyro){
 
         //Initialisere alle positioner til 0:
         gyro->px[i] = 0; gyro->py[i] = 0; gyro->pz[i] = 0;
+        gyro->px[i+2] = 0; gyro->py[i+2] = 0; gyro->pz[i+2] = 0;
     }
+}
+
+void update_step(acc_pos *gyro, float ax_new, float ay_new, float az_new){
+    float dt2_fjerde = 0.0001f;
+
+    // Calculate next position
+    gyro->px[3] = 2*(gyro->px[1]) - gyro->px[0] + dt2_fjerde*(ax_new + 2*gyro->ax[1] + gyro->ax[0]);
+    gyro->py[3] = 2*(gyro->py[1]) - gyro->py[0] + dt2_fjerde*(ay_new + 2*gyro->ay[1] + gyro->ay[0]);
+    gyro->pz[3] = 2*(gyro->pz[1]) - gyro->pz[0] + dt2_fjerde*(az_new + 2*gyro->az[1] + gyro->az[0]);
+
+    // Increment all values
+    gyro->px[0] = gyro->px[1]; gyro->px[1] = gyro->px[2]; gyro->px[2] = gyro->px[3];
+    gyro->py[0] = gyro->py[1]; gyro->py[1] = gyro->py[2]; gyro->py[2] = gyro->py[3];
+    gyro->pz[0] = gyro->pz[1]; gyro->pz[1] = gyro->pz[2]; gyro->pz[2] = gyro->pz[3];
+
+    gyro->ax[0] = gyro->ax[1]; gyro->ax[1] = ax_new; 
+    gyro->ay[0] = gyro->ay[1]; gyro->ay[1] = ay_new; 
+    gyro->az[0] = gyro->az[1]; gyro->az[1] = az_new; 
 }
 
 void acc_sim(float t, float *ax, float *ay, float *az){
