@@ -4,29 +4,23 @@
 
 
 void init_acc_pos(acc_pos *gyro){
-    for(int i = 0; i <= 1; i++){
-        // Initialisere alle accelerationer til 0: 
-        // Todo: Sæt z til 1 hvis det er op
-        gyro->ax[i] = 0; gyro->ay[i] = 0; gyro->az[i] = 0;
-
-        // Initialisere alle accelerationer til 0: 
-
-        //Initialisere alle positioner til 0:
-        gyro->px = 0; gyro->py = 0; gyro->pz = 0;
-    }
+    gyro->ax = 0; gyro->ay = 0; gyro->az = 0;
+    gyro->vx = 0; gyro->vy = 0; gyro->vz = 0;
+    gyro->px = 0; gyro->py = 0; gyro->pz = 0;
     gyro->dt = 0.0001;
 }
 
-void step(acc_pos *gyro){
-    printf("%4f", gyro->ax[0]);
+void step(float *gyro_axis_pos, float *gyro_axis_acc, float *gyro_axis_vel, float gyro_dt){
+    *gyro_axis_vel += *gyro_axis_acc * gyro_dt;
+    *gyro_axis_pos += *gyro_axis_vel * gyro_dt;
 }
 
 
 
-void shift(float *gyro_axis, float new_acceleration){
-    gyro_axis[0] = gyro_axis[1];
-    gyro_axis[1] = new_acceleration;
-}
+// void shift(float *gyro_axis, float new_acceleration){
+//     // gyro_axis[0] = gyro_axis[1];
+//     // gyro_axis[1] = new_acceleration;
+// }
 
 #define PI 3.141592653589793238f
 
