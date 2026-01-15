@@ -12,8 +12,8 @@ typedef struct {
 } acc_pos;
 
 void init_acc_pos(acc_pos *gyro);
-void step(acc_pos *gyro);
-void shift(acc_pos *gyro);
+static inline float step(acc_pos *gyro);
+static inline float shift_values(acc_pos *gyro);
 
 void acc_sim(float t, float *ax, float *ay, float *az);
 
