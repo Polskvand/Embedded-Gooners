@@ -1,0 +1,20 @@
+{
+  "C_Cpp.intelliSenseEngine": "default",
+  "idf.espIdfPath": "/Users/andreasantoft/esp/v5.5.2/esp-idf",
+  "idf.pythonInstallPath": "/usr/bin/python3",
+  "idf.openOcdConfigs": [
+    "board/esp32c3-builtin.cfg"
+  ],
+  "idf.port": "/dev/tty.usbserial-14210",
+  "idf.toolsPath": "/Users/andreasantoft/.espressif",
+  "idf.customExtraVars": {
+    "IDF_TARGET": "esp32c3"
+  },
+  "clangd.path": "/Users/andreasantoft/.espressif/tools/esp-clang/esp-19.1.2_20250312/esp-clang/bin/clangd",
+  "clangd.arguments": [
+    "--background-index",
+    "--query-driver=**",
+    "--compile-commands-dir=/Users/andreasantoft/Library/CloudStorage/OneDrive-DanmarksTekniskeUniversitet/DTU-KID3/25_Jan/Embedded-Gooners/Andreas/Gyro_data/build"
+  ],
+  "idf.flashType": "UART"
+}
