@@ -9,18 +9,19 @@ void init_acc_pos(acc_pos *gyro){
         // Todo: Sæt z til 1 hvis det er op
         gyro->ax[i] = 0; gyro->ay[i] = 0; gyro->az[i] = 0;
 
+        // Initialisere alle accelerationer til 0: 
+
         //Initialisere alle positioner til 0:
         gyro->px[i] = 0; gyro->py[i] = 0; gyro->pz[i] = 0;
     }
     gyro->dt = 0.0001;
 }
 
-static inline float step(float p2, float p1, float a2, float a1, float a0){
-    
+static inline float step_pos(acc_pos *gyro){
+    printf("Hello");
 }
 
-static inline float step_pos(float p2, float p1, float a2, float a1, float a0, float dt)
-{
+static inline float shift_values(acc_pos *gyro){
     float c = 0.25f * dt * dt; // Δt^2/4
     return 2.0f*p1 - p2 + c*(a2 + 2.0f*a1 + a0);
 }
