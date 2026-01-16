@@ -4,6 +4,7 @@
 #include "freertos/task.h"
 #include "driver/i2c.h"
 #include "esp_log.h"
+#include "FUNKTIONER.h"
 
 #define I2C_PORT        I2C_NUM_0
 #define I2C_SDA_PIN     GPIO_NUM_5
@@ -13,11 +14,9 @@
 #define MPU_ADDR        0x68
 
 // MPU6050 registre
-#define REG_WHO_AM_I    0x75
 #define REG_PWR_MGMT_1  0x6B
 #define REG_ACCEL_XOUT  0x3B  // start for accel/gyro burst read
 
-static const char *TAG = "MPU6050";
 
 void i2c_master_init() {
   i2c_config_t conf = {
@@ -45,47 +44,46 @@ int16_t be16(const uint8_t *p) {  // big-endian to int16
 }
 
 void app_main(void) {
-    i2c_master_init();
+  i2c_master_init();
 
-    uint8_t who = 0;
-    mpu_read_reg(REG_WHO_AM_I, &who, 1);
+  acc_pos gyro;
+  init_acc_pos(&gyro);
 
-    // Væk MPU'en (clear sleep bit)
-    mpu_write_reg(REG_PWR_MGMT_1, 0x00);
-    vTaskDelay(pdMS_TO_TICKS(50));
 
-    while (1) {
-        uint8_t buf[14];
-        mpu_read_reg(REG_ACCEL_XOUT, buf, sizeof(buf));
+  // Væk MPU'en (clear sleep bit)
+  mpu_write_reg(REG_PWR_MGMT_1, 0x00);
+  vTaskDelay(pdMS_TO_TICKS(50));
 
-        int16_t ax = be16(&buf[0]);
-        int16_t ay = be16(&buf[2]);
-        int16_t az = be16(&buf[4]);
-        int16_t temp = be16(&buf[6]);
-        int16_t gx = be16(&buf[8]);
-        int16_t gy = be16(&buf[10]);
-        int16_t gz = be16(&buf[12]);
+  while (1) {
+      uint8_t buf[14];
+      mpu_read_reg(REG_ACCEL_XOUT, buf, sizeof(buf));
 
-        // Standard sensitivitet når den står i default (±2g og ±250°/s):
-        // Accel: 16384 LSB/g
-        // Gyro : 131 LSB/(°/s)
-        // float ax_g = ax / 16384.0f;
-        // float ay_g = ay / 16384.0f;
-        // float az_g = az / 16384.0f;
-        float ax_g = -az / 16384.0f; // Changing x and z to align board with component orientation
-        float ay_g = ay / 16384.0f;
-        float az_g = ax / 16384.0f;  // But only acceleration
+      // int16_t ax = be16(&buf[0]);
+      // int16_t ay = be16(&buf[2]);
+      int16_t az = be16(&buf[4]);
+      // int16_t temp = be16(&buf[6]);
+      // int16_t gx = be16(&buf[8]);
+      // int16_t gy = be16(&buf[10]);
+      // int16_t gz = be16(&buf[12]);
 
-        float gx_dps = gx / 131.0f;
-        float gy_dps = gy / 131.0f;
-        float gz_dps = gz / 131.0f;
+      // Standard sensitivitet når den står i default (±2g og ±250°/s):
+      // Accel: 16384 LSB/g
+      // Gyro : 131 LSB/(°/s)
+      // float ax_g = ax / 16384.0f;
+      // float ay_g = ay / 16384.0f;
+      // float az_g = az / 16384.0f;
+      float ax_g = -az / 16384.0f; // Changing x and z to align board with component orientation
+      // float ay_g = ay / 16384.0f;
+      // float az_g = ax / 16384.0f;  // But only acceleration
 
-        // Temperatur: (temp/340) + 36.53 (ifølge datasheet)
-        float temp_c = (temp / 340.0f) + 36.53f;
+      // float gx_dps = gx / 131.0f;
+      // float gy_dps = gy / 131.0f;
+      // float gz_dps = gz / 131.0f;
 
-        printf("A[g] (x,y,z) = (%.2f, %.2f, %.2f)\t G[dps] (x,y,z) = (%.2f, %.2f, %.2f) \t | T=%.2fC\n",
-               ax_g, ay_g, az_g, gx_dps, gy_dps, gz_dps, temp_c);
+      gyro.ax = ax_g;
 
-        vTaskDelay(pdMS_TO_TICKS(200));
-    }
+      step(&gyro.px, &gyro.ax, &gyro.vx, 0.005);
+      printf("(ax, vx, px): %4f, %4f, %4f\n", gyro.ax, gyro.vx, gyro.px);
+      vTaskDelay(pdMS_TO_TICKS(50));
+  }
 }
