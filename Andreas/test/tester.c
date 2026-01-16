@@ -1,4 +1,4 @@
-#include "FUNK.h"
+#include "FUNK.c"
 #include <stdio.h>
 
 int main(){
