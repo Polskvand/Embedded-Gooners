@@ -19,6 +19,8 @@
 
 #define MPU_ADDR        0x68
 
+#define OLED_ADDR       0x3C
+
 // MPU6050 registre
 #define REG_PWR_MGMT_1     0x6B
 #define REG_ACCEL_XOUT     0x3B
@@ -74,6 +76,10 @@ void mpu_write_reg(uint8_t reg, uint8_t val);
 
 void mpu_read_reg(uint8_t reg, uint8_t *data, size_t len);
 
+void oled_write_reg(uint8_t reg, uint8_t val);
+
+void oled_read_reg(uint8_t reg, uint8_t *data, size_t len);
+
 int16_t be16(const uint8_t *p);
 
 int mapping_RGB(float x, float in_min, float in_max, float out_min, float out_max);
@@ -86,6 +92,8 @@ void interrupt_handler();
 
 void set_LED(int CHANNEL, int value);
 
+void oled_send_commands(const uint8_t *cmds, size_t len);
+
 volatile bool rot_led_level = false;
 volatile bool rotation_acceleration_swtich = true;
 uint64_t count;
@@ -95,6 +103,8 @@ gptimer_handle_t gptimer = NULL;
 
 
 void app_main(void) {
+    // i2c_driver_delete(I2C_PORT);
+    // vTaskDelay(pdMS_TO_TICKS(10));
     i2c_master_init();
 
     gpio_config_t io_conf = {
@@ -134,8 +144,66 @@ void app_main(void) {
 
     gptimer_get_raw_count(gptimer, &count);
 
+
+    // Force reset to avoid power issues
+    mpu_write_reg(REG_PWR_MGMT_1, 0x80);
+    vTaskDelay(pdMS_TO_TICKS(10));
     // Wake MPU (clear sleep bit)
     mpu_write_reg(REG_PWR_MGMT_1, 0x00);
+
+
+
+
+
+    // OLED display stuff
+    static const uint8_t oled_init_cmds[] = {
+        0xAE,       // Display OFF
+        0xD5, 0x80, // Clock divide
+        0xA8, 0x3F, // Multiplex 1/64
+        0xD3, 0x00, // Display offset
+        0x40,       // Start line
+        0x8D, 0x14, // Charge pump ON
+        0x20, 0x00, // Horizontal addressing
+        0xA1,       // Segment remap
+        0xC8,       // COM scan direction
+        0xDA, 0x12, // COM pins config
+        0x81, 0x7F, // Contrast
+        0xD9, 0xF1, // Pre-charge
+        0xDB, 0x40, // VCOM detect
+        0xA4,       // Resume RAM display
+        0xA6,       // Normal display
+        0xAF        // Display ON
+    };
+
+    printf("OLED test\n");
+
+    uint8_t reset_cmd = 0xE2; // software reset (not always documented)
+    oled_send_commands(&reset_cmd, 1);
+    vTaskDelay(pdMS_TO_TICKS(10));
+
+    uint8_t test = 0xA5;  // Entire display ON
+    oled_send_commands(&test, 1);
+
+    // Power on display
+    oled_send_commands(oled_init_cmds, sizeof(oled_init_cmds));
+    vTaskDelay(pdMS_TO_TICKS(100));
+
+    // All on
+    uint8_t all_on_cmds[] = {
+        0xA5
+    };
+    oled_send_commands(all_on_cmds, sizeof(all_on_cmds));
+    vTaskDelay(pdMS_TO_TICKS(5000));
+    uint8_t all_off_cmds[] = {
+        0xA4
+    };
+    oled_send_commands(all_off_cmds, sizeof(all_off_cmds));
+    printf("OLED stuff done\n");
+
+
+
+
+
 
     int acc_range = 2;
 
@@ -394,6 +462,14 @@ void mpu_read_reg(uint8_t reg, uint8_t *data, size_t len) {
   i2c_master_write_read_device(I2C_PORT, MPU_ADDR, &reg, 1, data, len, pdMS_TO_TICKS(100));
 }
 
+void oled_write_reg(uint8_t reg, uint8_t val) {
+  i2c_master_write_to_device(I2C_PORT, OLED_ADDR, (uint8_t[]){reg, val}, 2, pdMS_TO_TICKS(100));
+}
+
+void oled_read_reg(uint8_t reg, uint8_t *data, size_t len) {
+  i2c_master_write_read_device(I2C_PORT, OLED_ADDR, &reg, 1, data, len, pdMS_TO_TICKS(100));
+}
+
 int16_t be16(const uint8_t *p) {  // big-endian to int16
     return (int16_t)((p[0] << 8) | p[1]);
 }
@@ -483,4 +559,22 @@ void acc_moving_avg_update(acc_pos *f, float ax, float ay, float az,
     *ax_out = f->ax_sum / divisor;
     *ay_out = f->ay_sum / divisor;
     *az_out = f->az_sum / divisor;
+}
+
+
+
+void oled_send_commands(const uint8_t *cmds, size_t len) {
+    i2c_cmd_handle_t cmd = i2c_cmd_link_create();
+    i2c_master_start(cmd);
+    i2c_master_write_byte(cmd, (OLED_ADDR << 1) | I2C_MASTER_WRITE, true);
+    printf("Test\n");
+    i2c_master_write_byte(cmd, 0x00, true);
+    i2c_master_write(cmd, cmds, len, true);
+    i2c_master_stop(cmd);
+    // i2c_master_cmd_begin(I2C_PORT, cmd, pdMS_TO_TICKS(50));
+    esp_err_t err = i2c_master_cmd_begin(I2C_PORT, cmd, pdMS_TO_TICKS(50));
+    if (err != ESP_OK) {
+        printf("OLED I2C error: %s\n", esp_err_to_name(err));
+    }
+    i2c_cmd_link_delete(cmd);
 }
