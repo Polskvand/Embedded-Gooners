@@ -1,24 +1,33 @@
 #ifndef FUNKTIONER
 #define FUNKTIONER
 
-typedef struct {
-    // acceleration history: a_{k-2}, a_{k-1}
-    float ax, ay, az;
-    
-    //hastighed
-    float vx, vy, vz; 
+#include <stdio.h>
+#include <stdint.h>
+#include <math.h>
+#include <string.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "driver/i2c.h"
+#include "driver/gptimer.h"
+#include "esp_log.h"
+#include "driver/ledc.h"
+#include "driver/gpio.h"
+#include "esp_rom_sys.h"
+#include "soc/gpio_reg.h"
 
-    // position history: p_{k-2}, p_{k-1}
-    float px, py, pz;
+typedef struct{
+    float p, v, a;
+} Axis_state;
 
-    float dt; // sample time [s]
-} acc_pos;
+typedef struct{
+    Axis_state x, y, z;
+} gyro_state;
 
-void init_acc_pos(acc_pos *gyro);
-void step(float *gyro_axis_pos, float *gyro_axis_acc, float *gyro_axis_vel, float gyro_dt);
-// void shift(float *gyro_axis, float new_acceleration);
-
-void acc_sim(float t, float *ax, float *ay, float *az);
+void init_gyro(gyro_state *gyro, float ax0, float ay0, float az0);
+void step(Axis_state *axis, float acc_new);
+void i2c_master_init();
+void mpu_read_reg(uint8_t reg, uint8_t *data, size_t len);
+void mpu_write_reg(uint8_t reg, uint8_t val);
+int16_t be16(const uint8_t *p);
 
 #endif
-
