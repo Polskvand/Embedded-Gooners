@@ -100,17 +100,96 @@ uint64_t count;
 gptimer_handle_t gptimer = NULL;
 
 
+void ssd1306_cmd(uint8_t cmd)
+{
+    i2c_cmd_handle_t h = i2c_cmd_link_create();
+    i2c_master_start(h);
+    i2c_master_write_byte(h, (OLED_ADDR << 1) | I2C_MASTER_WRITE, true);
+    i2c_master_write_byte(h, 0x00, true); // Control byte: command
+    i2c_master_write_byte(h, cmd, true);
+    i2c_master_stop(h);
+    i2c_master_cmd_begin(I2C_PORT, h, pdMS_TO_TICKS(100));
+    i2c_cmd_link_delete(h);
+}
+
+void ssd1306_fill(void)
+{
+    for (uint8_t page = 0; page < 8; page++) { ////
+        ssd1306_cmd(0xB0 + page); // page address
+        ssd1306_cmd(0x00);        // column low
+        ssd1306_cmd(0x10);        // column high
+
+        i2c_cmd_handle_t h = i2c_cmd_link_create();
+        i2c_master_start(h);
+        i2c_master_write_byte(h, (OLED_ADDR << 1) | I2C_MASTER_WRITE, true);
+        i2c_master_write_byte(h, 0x40, true); // Control byte: data
+
+        for (int i = 0; i < 128; i++)
+            i2c_master_write_byte(h, 0xFF, true);
+
+        i2c_master_stop(h);
+        i2c_master_cmd_begin(I2C_PORT, h, pdMS_TO_TICKS(100));
+        i2c_cmd_link_delete(h);
+    }
+}
+
+
+
+void oled_send_data(const uint8_t *data, size_t len)
+{
+    i2c_cmd_handle_t cmd = i2c_cmd_link_create();
+
+    i2c_master_start(cmd);
+    i2c_master_write_byte(cmd,
+        (OLED_ADDR << 1) | I2C_MASTER_WRITE,
+        true);
+
+    // Control byte: DATA
+    i2c_master_write_byte(cmd, 0x40, true);
+
+    i2c_master_write(cmd, data, len, true);
+    i2c_master_stop(cmd);
+
+    i2c_master_cmd_begin(I2C_PORT, cmd, pdMS_TO_TICKS(50));
+    i2c_cmd_link_delete(cmd);
+}
+
+void oled_set_position(uint8_t x, uint8_t page)
+{
+    uint8_t cmds[] = {
+        0x21, x, 127,   // Column address
+        0x22, page, page // Page address
+    };
+    oled_send_commands(cmds, sizeof(cmds));
+}
+
+void oled_fill(uint8_t value)
+{
+    for (uint8_t page = 0; page < 8; page++)
+    {
+        oled_set_position(0, page);
+
+        uint8_t line[128];
+        memset(line, value, sizeof(line));
+        oled_send_data(line, sizeof(line));
+    }
+}
+
+
+
+
 
 
 void app_main(void) {
-    // i2c_driver_delete(I2C_PORT);
-    // vTaskDelay(pdMS_TO_TICKS(10));
+    i2c_driver_delete(I2C_PORT);
+    vTaskDelay(pdMS_TO_TICKS(10));
     i2c_master_init();
 
     gpio_config_t io_conf = {
         .pin_bit_mask = (1ULL << MODE_PIN),
         .mode = GPIO_MODE_OUTPUT,
         .pull_up_en = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
         .intr_type = GPIO_INTR_DISABLE
     };
@@ -159,17 +238,17 @@ void app_main(void) {
     static const uint8_t oled_init_cmds[] = {
         0xAE,       // Display OFF
         0xD5, 0x80, // Clock divide
-        0xA8, 0x3F, // Multiplex 1/64
+        0xA8, 0x3F, // Multiplex 1/64 ////
         0xD3, 0x00, // Display offset
         0x40,       // Start line
         0x8D, 0x14, // Charge pump ON
-        0x20, 0x00, // Horizontal addressing
+        0x20, 0x00, // Horizontal addressing ///
         0xA1,       // Segment remap
         0xC8,       // COM scan direction
-        0xDA, 0x12, // COM pins config
+        0xDA, 0x12, // COM pins config ////
         0x81, 0x7F, // Contrast
         0xD9, 0xF1, // Pre-charge
-        0xDB, 0x40, // VCOM detect
+        0xDB, 0x40, // VCOM detect ///
         0xA4,       // Resume RAM display
         0xA6,       // Normal display
         0xAF        // Display ON
@@ -177,28 +256,22 @@ void app_main(void) {
 
     printf("OLED test\n");
 
-    uint8_t reset_cmd = 0xE2; // software reset (not always documented)
-    oled_send_commands(&reset_cmd, 1);
-    vTaskDelay(pdMS_TO_TICKS(10));
-
-    uint8_t test = 0xA5;  // Entire display ON
-    oled_send_commands(&test, 1);
-
     // Power on display
     oled_send_commands(oled_init_cmds, sizeof(oled_init_cmds));
-    vTaskDelay(pdMS_TO_TICKS(100));
+    vTaskDelay(pdMS_TO_TICKS(1000));
 
-    // All on
-    uint8_t all_on_cmds[] = {
-        0xA5
-    };
-    oled_send_commands(all_on_cmds, sizeof(all_on_cmds));
-    vTaskDelay(pdMS_TO_TICKS(5000));
-    uint8_t all_off_cmds[] = {
-        0xA4
-    };
-    oled_send_commands(all_off_cmds, sizeof(all_off_cmds));
-    printf("OLED stuff done\n");
+    // uint8_t off = 0xA4;
+    // oled_send_commands(&off, 1);
+
+    // ssd1306_fill(); 
+
+
+
+    oled_fill(0xFF);   // Entire screen ON
+    vTaskDelay(pdMS_TO_TICKS(2000));
+    oled_fill(0x00);   // Entire screen OFF
+    vTaskDelay(pdMS_TO_TICKS(2000));
+    oled_fill(0xFF);   // Entire screen ON
 
 
 
@@ -406,9 +479,10 @@ void calibration(float *ax_ptr,
                  float *gy_ptr, 
                  float *gz_ptr) {
 
+    int n_steps = 10000;
     float ax = 0.0, ay = 0.0, az = 0.0, temp = 0.0, gx = 0.0, gy = 0.0, gz = 0.0;
 
-    for (int i = 0; i < 10000; i++) {
+    for (int i = 0; i < n_steps; i++) {
         uint8_t buf[14];
         mpu_read_reg(REG_ACCEL_XOUT, buf, sizeof(buf));
 
@@ -423,13 +497,13 @@ void calibration(float *ax_ptr,
         vTaskDelay(pdMS_TO_TICKS(1));
     }
 
-    *ax_ptr = ax / 10000.0f;
-    *ay_ptr = ay / 10000.0f;
-    *az_ptr = az / 10000.0f;
-    *temp_ptr = temp / 10000.0f;
-    *gx_ptr = gx / 10000.0f;
-    *gy_ptr = gy / 10000.0f;
-    *gz_ptr = gz / 10000.0f;
+    *ax_ptr     = ax / (float)n_steps;
+    *ay_ptr     = ay / (float)n_steps;
+    *az_ptr     = az / (float)n_steps;
+    *temp_ptr   = temp / (float)n_steps;
+    *gx_ptr     = gx / (float)n_steps;
+    *gy_ptr     = gy / (float)n_steps;
+    *gz_ptr     = gz / (float)n_steps;
 }
 
 
