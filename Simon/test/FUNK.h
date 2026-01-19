@@ -19,6 +19,7 @@ void step(float *gyro_axis_pos, float *gyro_axis_acc, float *gyro_axis_vel, floa
 // void shift(float *gyro_axis, float new_acceleration);
 
 void acc_sim(float t, float *ax, float *ay, float *az);
+void mapToScreen(float *sx, float *sy, float *px, float *py, float maxX, float maxY);
 
 #endif
 

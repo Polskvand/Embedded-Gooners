@@ -15,12 +15,28 @@ void step(float *gyro_axis_pos, float *gyro_axis_acc, float *gyro_axis_vel, floa
     *gyro_axis_pos += *gyro_axis_vel * gyro_dt;
 }
 
+#define SCREENWIDTH 128
+#define SCREENHEIGHT 64
+void mapToScreen(float *sx, float *sy, float *px, float *py, float maxX, float maxY)
+{
+    if(*px >= maxX)
+    {
+        *sx = SCREENWIDTH;
+    }
+    else
+    {
+        *sx = *px * (SCREENWIDTH / maxX);
+    }
 
-
-// void shift(float *gyro_axis, float new_acceleration){
-//     // gyro_axis[0] = gyro_axis[1];
-//     // gyro_axis[1] = new_acceleration;
-// }
+    if(*py >= maxY)
+    {
+        *sy = SCREENHEIGHT;
+    }
+    else
+    {
+    *sy = *py * (SCREENHEIGHT / maxY);
+    }
+}
 
 #define PI 3.141592653589793238f
 
