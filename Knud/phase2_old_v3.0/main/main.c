@@ -42,9 +42,12 @@
 #define RIGHT_CHANNEL       3
 
 #define RGB_TIMER       0
-#define RGB_DUTY_RES    9       // 9-bit resolution
-#define RGB_FREQUENCY   5000    // 5 kHz PWM
-#define AVG_WINDOW      32
+#define RGB_DUTY_RES    9                   // 13-bit resolution
+#define RGB_FREQUENCY   5000                // 5 kHz PWM
+
+
+#define PI          3.14159265359f
+#define AVG_WINDOW  32   // 5–10 is typical for LEDs
 
 
 #define OLED_WIDTH 128
@@ -71,6 +74,7 @@ uint8_t oled_buffer[OLED_WIDTH * (OLED_HEIGHT / 8)] = {0};
 
 
 // Prototype functions
+
 void config_button();
 void config_i2c_master();
 void config_timer();
@@ -81,7 +85,10 @@ void config_ssd1306();
 
 void init_acc_pos(acc_pos *f);
 
-void acc_moving_avg_update(acc_pos *f, float ax, float ay, float az, float *ax_out, float *ay_out, float *az_out);
+void acc_moving_avg_update(acc_pos *f, float ax, float ay, float az,
+                           float *ax_out, float *ay_out, float *az_out);
+
+void i2c_master_init();
 
 void mpu_write_reg(uint8_t reg, uint8_t val);
 
@@ -90,6 +97,8 @@ void mpu_read_reg(uint8_t reg, uint8_t *data, size_t len);
 int16_t be16(const uint8_t *p);
 
 int mapping(float x, float in_min, float in_max, float out_min, float out_max);
+
+void startup();
 
 void calibration(float *ax_ptr, float *ay_ptr, float *az_ptr, float *temp_ptr, float *gx_ptr, float *gy_ptr, float *gz_ptr);
 
@@ -104,8 +113,6 @@ void oled_update();
 void setPixel(uint8_t x, uint8_t y, bool on);
 
 
-
-// TODO: More comments (english) - Remove obvious Chad comments
 void app_main(void) {
     i2c_driver_delete(I2C_PORT);
     vTaskDelay(pdMS_TO_TICKS(10));
@@ -126,6 +133,8 @@ void app_main(void) {
     // Wake MPU (clear sleep bit)
     mpu_write_reg(REG_PWR_MGMT_1, 0x00);    
 
+    startup();
+
     // Calibration
     printf("-- Beginning calibration --\n");
     float ax_cal = 0.0, ay_cal = 0.0, az_cal = 0.0, temp_cal = 0.0, gx_cal = 0.0, gy_cal = 0.0, gz_cal = 0.0;
@@ -134,8 +143,6 @@ void app_main(void) {
     printf("-- Calibration complete-- \nAverage values:\n");
     printf("ax_cal = %.2f, ay_cal = %.2f, az_cal = %.2f, temp_cal = %.2f, gx_cal = %.2f, gy_cal = %.2f, gz_cal = %.2f\n\n", 
         ax_cal, ay_cal, az_cal, temp_cal, gx_cal, gy_cal, gz_cal);
-
-    // TODO: Make indicator to tell the user that it is calibrated and ready
 
     acc_pos acc_filter;
     init_acc_pos(&acc_filter);
@@ -176,7 +183,6 @@ void app_main(void) {
         // Temperatur: (temp/340) + 36.53 (ifølge datasheet)
         float temp_c = (temp / 340.0f) + 36.53f; // set - temp_cal for current temperature deviation instead of reading
 
-        // TODO: Turn into a function or switch thingy 
         if (rotation_acceleration_swtich) {
             // In acceleration mode
             // FORWARD_BACKWARDS
@@ -233,15 +239,11 @@ void app_main(void) {
         oled_update();
 
 
-        // TODO: Få flushed
+
         printf("A[g] (x,y,z) = (%5.2f, %5.2f, %5.2f)\t G[dps] (x,y,z) = (%7.2f, %7.2f, %7.2f) \t | T=%5.2fC\n",
                ax_g, ay_g, az_g, gx_dps, gy_dps, gz_dps, temp_c);
         // fflush(stdout);
     }
-
-
-
-    // TODO: Implement positions with momentum
 }
 
 
@@ -423,6 +425,43 @@ void interrupt_handler()
 void set_LED(int CHANNEL, int value) {
     ledc_set_duty(LEDC_MODE, CHANNEL, value);
     ledc_update_duty(LEDC_MODE, CHANNEL);
+}
+
+
+// startup sequence
+void startup() {
+    // turnOff();
+    printf("-- STARTUP SEQUENCE --\n");
+
+    vTaskDelay(pdMS_TO_TICKS(2000));
+
+    // FORWARD
+    set_LED(FORWARD_CHANNEL, 511);
+    printf("FORWARD\n");
+    vTaskDelay(pdMS_TO_TICKS(1000));
+    set_LED(FORWARD_CHANNEL, 0);
+
+    // BACK
+    set_LED(BACKWARD_CHANNEL, 511);
+    printf("BACKWARD\n");
+    vTaskDelay(pdMS_TO_TICKS(1000));
+    set_LED(BACKWARD_CHANNEL, 0);
+
+    // LEFT
+    set_LED(LEFT_CHANNEL, 511);
+    printf("LEFT\n");
+    vTaskDelay(pdMS_TO_TICKS(1000));
+    set_LED(LEFT_CHANNEL, 0);
+
+    // RIGHT
+    set_LED(RIGHT_CHANNEL, 511);
+    printf("RIGHT\n");
+    vTaskDelay(pdMS_TO_TICKS(1000));
+    set_LED(RIGHT_CHANNEL, 0);
+
+    vTaskDelay(pdMS_TO_TICKS(1000));
+    printf("-- DONE --\n");
+    vTaskDelay(pdMS_TO_TICKS(1000));
 }
 
 void acc_moving_avg_update(acc_pos *f, float ax, float ay, float az,
