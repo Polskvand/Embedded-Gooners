@@ -1,4 +1,7 @@
 {
     "cmake.sourceDirectory": "/Users/andreasantoft/Library/CloudStorage/OneDrive-DanmarksTekniskeUniversitet/DTU-KID3/25_Jan/Embedded-Gooners/Andreas/kore_gyro/faaDataFraGyro",
-    "cmake.ignoreCMakeListsMissing": true
+    "cmake.ignoreCMakeListsMissing": true,
+    "idf.openOcdConfigs": [
+        "board/esp32c3-builtin.cfg"
+    ]
 }

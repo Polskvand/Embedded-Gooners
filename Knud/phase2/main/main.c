@@ -163,14 +163,18 @@ void oled_set_position(uint8_t x, uint8_t page)
     oled_send_commands(cmds, sizeof(cmds));
 }
 
-void oled_set_pixel(uint8_t x, uint8_t y)
+void oled_set_pixel(uint8_t x, uint8_t y, bool on)
 {
     uint8_t page = y / 8;
     uint8_t bit  = y % 8;
 
     oled_set_position(x, page);
 
-    uint8_t data = (1 << bit);
+    if (on)
+        uint8_t data |=  (1 << bit);    // tænd pixel
+    else
+        uint8_t data &= ~(1 << bit);    // sluk pixel
+
     oled_send_data(&data, 1);
 }
 
@@ -480,7 +484,7 @@ void app_main(void) {
         int ay_pixel = mapping(ay_g, -1.0, 1.0, 0.0, 128.0); // Forward-back
         int ax_pixel = mapping(ax_g, -1.0, 1.0, 0.0, 64.0); // Left-right
         // oled_fill(0x00);
-        oled_set_pixel(ay_pixel, ax_pixel);
+        oled_set_pixel(ay_pixel, ax_pixel, 1);
 
 
 
