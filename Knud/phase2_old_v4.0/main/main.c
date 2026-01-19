@@ -44,9 +44,7 @@
 #define RGB_TIMER       0
 #define RGB_DUTY_RES    9       // 9-bit resolution
 #define RGB_FREQUENCY   5000    // 5 kHz PWM
-#define AVG_WINDOW      5
-
-#define LED_OFF         0
+#define AVG_WINDOW      32
 
 
 #define OLED_WIDTH 128
@@ -65,14 +63,6 @@ typedef struct {
     bool filled;
 } acc_pos;
 
-typedef struct{
-    float p, v, a;
-} Axis_state;
-
-typedef struct{
-    Axis_state x, y, z;
-} gyro_state;
-
 bool rot_led_level = false;
 bool rotation_acceleration_swtich = true;
 uint64_t count;
@@ -90,9 +80,6 @@ void config_led_timer();
 void config_ssd1306();
 
 void init_acc_pos(acc_pos *f);
-void init_gyro(gyro_state *gyro, float ax0, float ay0, float az0);
-
-void step(Axis_state *axis, float acc_new);
 
 void acc_moving_avg_update(acc_pos *f, float ax, float ay, float az, float *ax_out, float *ay_out, float *az_out);
 
@@ -115,8 +102,6 @@ void ssd1306_cmd(uint8_t cmd);
 void oled_update();
 
 void setPixel(uint8_t x, uint8_t y, bool on);
-
-static inline void drive_axis(float value, float max_value, int neg_channel, int pos_channel);
 
 
 
@@ -154,9 +139,6 @@ void app_main(void) {
 
     acc_pos acc_filter;
     init_acc_pos(&acc_filter);
-
-    gyro_state gyro;
-    init_gyro(&gyro, 0, 0, 1);
 
     while (1) {
         gpio_set_level(MODE_PIN, rot_led_level);
@@ -197,12 +179,49 @@ void app_main(void) {
         // TODO: Turn into a function or switch thingy 
         if (rotation_acceleration_swtich) {
             // In acceleration mode
-            drive_axis(ay_g, 1.0f, BACKWARD_CHANNEL, FORWARD_CHANNEL);
-            drive_axis(ax_g, 1.0f, LEFT_CHANNEL, RIGHT_CHANNEL);
+            // FORWARD_BACKWARDS
+            if (ay_g < 0) {
+                int ay_g_int = mapping(ay_g, -1.0, 0.0, 0.0, 511.0);
+                set_LED(BACKWARD_CHANNEL, 511 - ay_g_int);
+                set_LED(FORWARD_CHANNEL, 1);
+            } else {
+                int ay_g_int = mapping(ay_g, 0.0, 1.0, 0.0, 511.0);
+                set_LED(BACKWARD_CHANNEL, 1);
+                set_LED(FORWARD_CHANNEL, ay_g_int);
+            }
+            
+            // LEFT-RIGHT
+            if (ax_g < 0) {
+                int ax_g_int = mapping(ax_g, -1.0, 0.0, 0.0, 511.0);
+                set_LED(LEFT_CHANNEL, 511 - ax_g_int);
+                set_LED(RIGHT_CHANNEL, 1);
+            } else {
+                int ax_g_int = mapping(ax_g, 0.0, 1.0, 0.0, 511.0);
+                set_LED(LEFT_CHANNEL, 1);
+                set_LED(RIGHT_CHANNEL, ax_g_int);
+            }
         } else {
             // In rotation mode
-            drive_axis(gy_dps, 250.0f, LEFT_CHANNEL, RIGHT_CHANNEL);
-            drive_axis(gx_dps, 250.0f, FORWARD_CHANNEL, BACKWARD_CHANNEL);
+            // FORWARD-BACK
+            if (gy_dps < 0) {
+                int gy_dps_int = mapping(gy_dps, -250.0, 0.0, 0.0, 511.0);
+                set_LED(LEFT_CHANNEL, 511 - gy_dps_int);
+                set_LED(RIGHT_CHANNEL, 1);
+            } else {
+                int gy_dps_int = mapping(gy_dps, 0.0, 250.0, 0.0, 511.0);
+                set_LED(LEFT_CHANNEL, 1);
+                set_LED(RIGHT_CHANNEL, gy_dps_int);
+            }
+            
+            // LEFT-RIGHT
+            if (gx_dps < 0) {
+                int gx_dps_int = mapping(gx_dps, -250.0, 0.0, 0.0, 511.0);
+                set_LED(FORWARD_CHANNEL, 511 - gx_dps_int);
+            } else {
+                int gx_dps_int = mapping(gx_dps, 0.0, 250.0, 0.0, 511.0);
+                set_LED(FORWARD_CHANNEL, 1);
+                set_LED(BACKWARD_CHANNEL, gx_dps_int);
+            }
         }
 
 
@@ -210,38 +229,14 @@ void app_main(void) {
         // OLED pixel
         int ay_pixel = mapping(ay_g, -1.0, 1.0, 0.0, 128.0); // Forward-back
         int ax_pixel = mapping(ax_g, -1.0, 1.0, 0.0, 64.0); // Left-right
-        // setPixel(ay_pixel, ax_pixel, true);    
-        // oled_update();
+        setPixel(ay_pixel, ax_pixel, true);    
+        oled_update();
 
 
         // TODO: Få flushed
-        // printf("\rA[g] (x,y,z) = (%5.2f, %5.2f, %5.2f)\t G[dps] (x,y,z) = (%7.2f, %7.2f, %7.2f) \t | T=%5.2fC",
-        //        ax_g, ay_g, az_g, gx_dps, gy_dps, gz_dps, temp_c);
+        printf("A[g] (x,y,z) = (%5.2f, %5.2f, %5.2f)\t G[dps] (x,y,z) = (%7.2f, %7.2f, %7.2f) \t | T=%5.2fC\n",
+               ax_g, ay_g, az_g, gx_dps, gy_dps, gz_dps, temp_c);
         // fflush(stdout);
-
-        ESP_LOGI("IMU",
-            "A[g]=(%5.2f,%5.2f,%5.2f) G[dps]=(%7.2f,%7.2f,%7.2f) T=%5.2fC",
-            ax_g, ay_g, az_g, gx_dps, gy_dps, gz_dps, temp_c);
-
-
-        step(&gyro.x, ax_g);
-        step(&gyro.y, ay_g);
-        step(&gyro.z, az_g - 1); // Food for thought. 
-
-        printf(
-            "a:(%6.3f %6.3f %6.3f)\t"
-            "v:(%6.3f %6.3f %6.3f)\t"
-            "p:(%6.3f %6.3f %6.3f)\n",
-            gyro.x.a, gyro.y.a, gyro.z.a,
-            gyro.x.v, gyro.y.v, gyro.z.v,
-            gyro.x.p, gyro.y.p, gyro.z.p
-        );
-
-        int pos_map_y = mapping(gyro.y.p, -5.0, 5.0, 0.0, 128.0);
-        int pos_map_x = mapping(gyro.x.p, -5.0, 5.0, 0.0, 64.0);
-
-        setPixel(pos_map_y, pos_map_x, true);    
-        oled_update();
     }
 
 
@@ -547,35 +542,4 @@ void config_ssd1306()
 
     ssd1306_cmd(0xAF); // DISPLAY ON
 }
-
-static inline void drive_axis(float value, float max_value, int neg_channel, int pos_channel) {
-    float mag = fabsf(value);
-    if (mag > max_value) mag = max_value;
-
-    int pwm = mapping(mag, 0.0f, max_value, 0.0f, 511.0f);
-
-    if (value < 0) {
-        set_LED(neg_channel, pwm);
-        set_LED(pos_channel, LED_OFF);
-    } else {
-        set_LED(neg_channel, LED_OFF);
-        set_LED(pos_channel, pwm);
-    }
-}
-
-void init_gyro(gyro_state *gyro, float ax0, float ay0, float az0){
-    *gyro = (gyro_state){0};
-    gyro->x.a = ax0;
-    gyro->y.a = ay0;
-    gyro->z.a = az0;
-}
-
-void step(Axis_state *axis, float acc_new){
-    float dt = 0.1;
-    float vel_old = axis->v * 0.975; // set to 1.01 for a good game
-    axis->v = vel_old + 0.5f * dt * (acc_new + axis->a);
-    axis->p = axis->p + dt * vel_old + 0.25f*dt*dt*(axis->a + acc_new);
-    axis->a = acc_new;
-}
-
 
