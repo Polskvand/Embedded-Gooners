@@ -49,10 +49,6 @@
 #define PI          3.14159265359f
 #define AVG_WINDOW  32   // 5–10 is typical for LEDs
 
-
-#define OLED_WIDTH 128
-#define OLED_HEIGHT 64
-
 typedef struct {
     float ax_buf[AVG_WINDOW];
     float ay_buf[AVG_WINDOW];
@@ -66,22 +62,8 @@ typedef struct {
     bool filled;
 } acc_pos;
 
-bool rot_led_level = false;
-bool rotation_acceleration_swtich = true;
-uint64_t count;
-gptimer_handle_t gptimer = NULL;
-uint8_t oled_buffer[OLED_WIDTH * (OLED_HEIGHT / 8)] = {0};
-
 
 // Prototype functions
-
-void config_button();
-void config_i2c_master();
-void config_timer();
-void config_mode_led();
-void config_direction_channels();
-void config_led_timer();
-void config_ssd1306();
 
 void init_acc_pos(acc_pos *f);
 
@@ -93,6 +75,10 @@ void i2c_master_init();
 void mpu_write_reg(uint8_t reg, uint8_t val);
 
 void mpu_read_reg(uint8_t reg, uint8_t *data, size_t len);
+
+void oled_write_reg(uint8_t reg, uint8_t val);
+
+void oled_read_reg(uint8_t reg, uint8_t *data, size_t len);
 
 int16_t be16(const uint8_t *p);
 
@@ -106,46 +92,309 @@ void interrupt_handler();
 
 void set_LED(int CHANNEL, int value);
 
-void ssd1306_cmd(uint8_t cmd);
+void oled_send_commands(const uint8_t *cmds, size_t len);
 
-void oled_update();
+volatile bool rot_led_level = false;
+volatile bool rotation_acceleration_swtich = true;
+uint64_t count;
+gptimer_handle_t gptimer = NULL;
 
-void setPixel(uint8_t x, uint8_t y, bool on);
+
+void ssd1306_cmd(uint8_t cmd)
+{
+    i2c_cmd_handle_t h = i2c_cmd_link_create();
+    i2c_master_start(h);
+    i2c_master_write_byte(h, (OLED_ADDR << 1) | I2C_MASTER_WRITE, true);
+    i2c_master_write_byte(h, 0x00, true); // Control byte: command
+    i2c_master_write_byte(h, cmd, true);
+    i2c_master_stop(h);
+    i2c_master_cmd_begin(I2C_PORT, h, pdMS_TO_TICKS(100));
+    i2c_cmd_link_delete(h);
+}
+
+void ssd1306_fill(void)
+{
+    for (uint8_t page = 0; page < 8; page++) { ////
+        ssd1306_cmd(0xB0 + page); // page address
+        ssd1306_cmd(0x00);        // column low
+        ssd1306_cmd(0x10);        // column high
+
+        i2c_cmd_handle_t h = i2c_cmd_link_create();
+        i2c_master_start(h);
+        i2c_master_write_byte(h, (OLED_ADDR << 1) | I2C_MASTER_WRITE, true);
+        i2c_master_write_byte(h, 0x40, true); // Control byte: data
+
+        for (int i = 0; i < 128; i++)
+            i2c_master_write_byte(h, 0xFF, true);
+
+        i2c_master_stop(h);
+        i2c_master_cmd_begin(I2C_PORT, h, pdMS_TO_TICKS(100));
+        i2c_cmd_link_delete(h);
+    }
+}
+
+
+
+void oled_send_data(const uint8_t *data, size_t len)
+{
+    i2c_cmd_handle_t cmd = i2c_cmd_link_create();
+
+    i2c_master_start(cmd);
+    i2c_master_write_byte(cmd,
+        (OLED_ADDR << 1) | I2C_MASTER_WRITE,
+        true);
+
+    // Control byte: DATA
+    i2c_master_write_byte(cmd, 0x40, true);
+
+    i2c_master_write(cmd, data, len, true);
+    i2c_master_stop(cmd);
+
+    i2c_master_cmd_begin(I2C_PORT, cmd, pdMS_TO_TICKS(50));
+    i2c_cmd_link_delete(cmd);
+}
+
+void oled_set_position(uint8_t x, uint8_t page)
+{
+    uint8_t cmds[] = {
+        0x21, x, 127,   // Column address
+        0x22, page, page // Page address
+    };
+    oled_send_commands(cmds, sizeof(cmds));
+}
+
+void oled_set_pixel(uint8_t x, uint8_t y, bool on)
+{
+    uint8_t page = y / 8;
+    uint8_t bit  = y % 8;
+
+    oled_set_position(x, page);
+
+    if (on)
+        uint8_t data =  (1 << bit);    // tænd pixel
+    else
+        uint8_t data = ~(1 << bit);    // sluk pixel
+
+    oled_send_data(&data, 1);
+}
+
+void oled_fill(uint8_t value)
+{
+    for (uint8_t page = 0; page < 8; page++)
+    {
+        oled_set_position(0, page);
+
+        uint8_t line[128];
+        memset(line, value, sizeof(line));
+        oled_send_data(line, sizeof(line));
+    }
+}
+
+
+
+
 
 
 void app_main(void) {
     i2c_driver_delete(I2C_PORT);
     vTaskDelay(pdMS_TO_TICKS(10));
+    i2c_master_init();
 
-    config_i2c_master();
-    config_mode_led();
-    config_timer();
-    config_button();
-    config_led_timer();
-    config_direction_channels();
-    config_ssd1306();
+    gpio_config_t io_conf = {
+        .pin_bit_mask = (1ULL << MODE_PIN),
+        .mode = GPIO_MODE_OUTPUT,
+        .pull_up_en = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE
+    };
+    gpio_config(&io_conf);
+
+    // Configure a timer
+    gptimer_config_t timer_config = {
+        .clk_src = GPTIMER_CLK_SRC_DEFAULT,
+        .direction = GPTIMER_COUNT_UP,
+        .resolution_hz = 1 * 1000 * 1000,   // Resolution is 1 MHz, i.e., 1 tick equals 1 microsecond
+    };
+    gptimer_new_timer(&timer_config, &gptimer);
+
+    // Enable the timer
+    gptimer_enable(gptimer);
+    // Start the timer
+    gptimer_start(gptimer);
+
+    // Configure Button
+    gpio_config_t io_conf_ins = {
+        .pin_bit_mask = (1ULL << BUTTON_PIN),
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_NEGEDGE
+    };
+    gpio_config(&io_conf_ins);
+
+    gpio_install_isr_service(0);
+    gpio_isr_handler_add(BUTTON_PIN, interrupt_handler, NULL);
 
     gptimer_get_raw_count(gptimer, &count);
+
 
     // Force reset to avoid power issues
     mpu_write_reg(REG_PWR_MGMT_1, 0x80);
     vTaskDelay(pdMS_TO_TICKS(10));
     // Wake MPU (clear sleep bit)
-    mpu_write_reg(REG_PWR_MGMT_1, 0x00);    
+    mpu_write_reg(REG_PWR_MGMT_1, 0x00);
 
+
+
+
+
+    // OLED display stuff
+    static const uint8_t oled_init_cmds[] = {
+        0xAE,       // Display OFF
+        0xD5, 0x80, // Clock divide
+        0xA8, 0x3F, // Multiplex 1/64 ////
+        0xD3, 0x00, // Display offset
+        0x40,       // Start line
+        0x8D, 0x14, // Charge pump ON
+        0x20, 0x00, // Horizontal addressing ///
+        0xA1,       // Segment remap
+        0xC8,       // COM scan direction
+        0xDA, 0x12, // COM pins config ////
+        0x81, 0x7F, // Contrast
+        0xD9, 0xF1, // Pre-charge
+        0xDB, 0x40, // VCOM detect ///
+        0xA4,       // Resume RAM display
+        0xA6,       // Normal display
+        0xAF        // Display ON
+    };
+
+    printf("OLED test\n");
+
+    // Power on display
+    oled_send_commands(oled_init_cmds, sizeof(oled_init_cmds));
+    vTaskDelay(pdMS_TO_TICKS(1000));
+
+    // uint8_t off = 0xA4;
+    // oled_send_commands(&off, 1);
+
+    // ssd1306_fill(); 
+
+
+
+    oled_fill(0xFF);   // Entire screen ON
+    vTaskDelay(pdMS_TO_TICKS(1000));
+    oled_fill(0x00);   // Entire screen OFF
+    vTaskDelay(pdMS_TO_TICKS(1000));;
+    oled_set_pixel(20, 20, 1);
+    vTaskDelay(pdMS_TO_TICKS(1000));
+    oled_fill(0x00);   // Entire screen OFF
+    vTaskDelay(pdMS_TO_TICKS(1000));
+
+
+
+
+
+
+    int acc_range = 2;
+
+    float acc_scale;
+    switch (acc_range) {
+        case 4:
+            mpu_write_reg(REG_ACCEL_CONFIG, 0x08);
+            acc_scale = 8192.0f;
+            break;
+        case 8:
+            mpu_write_reg(REG_ACCEL_CONFIG, 0x10);
+            acc_scale = 4096.0f;
+            break;
+        case 16:
+            mpu_write_reg(REG_ACCEL_CONFIG, 0x18);
+            acc_scale = 2048.0f;
+            break;
+        default:
+            mpu_write_reg(REG_ACCEL_CONFIG, 0x00);
+            acc_scale = 16384.0f;
+            break;
+    }
+    vTaskDelay(pdMS_TO_TICKS(10));
+
+
+
+    // Configure RGB timer
+    ledc_timer_config_t ledc_timer = {
+        .speed_mode       = LEDC_MODE,
+        .duty_resolution  = RGB_DUTY_RES,
+        .timer_num        = RGB_TIMER,
+        .freq_hz          = RGB_FREQUENCY,
+        .clk_cfg          = LEDC_AUTO_CLK
+    };
+    ledc_timer_config(&ledc_timer);
+
+    
+    // Configure direction channels
+    ledc_channel_config_t forward_channel_cfg = {
+        .gpio_num       = LED_FORWARD,
+        .speed_mode     = LEDC_MODE,
+        .channel        = FORWARD_CHANNEL,
+        .timer_sel      = RGB_TIMER,
+        .duty           = 0,
+        .hpoint         = 0
+    };
+    ledc_channel_config(&forward_channel_cfg);
+
+    ledc_channel_config_t backward_channel_cfg = {
+        .gpio_num       = LED_BACKWARD,
+        .speed_mode     = LEDC_MODE,
+        .channel        = BACKWARD_CHANNEL,
+        .timer_sel      = RGB_TIMER,
+        .duty           = 0,
+        .hpoint         = 0
+    };
+    ledc_channel_config(&backward_channel_cfg);
+
+    ledc_channel_config_t left_channel_cfg = {
+        .gpio_num       = LED_LEFT,
+        .speed_mode     = LEDC_MODE,
+        .channel        = LEFT_CHANNEL,
+        .timer_sel      = RGB_TIMER,
+        .duty           = 0,
+        .hpoint         = 0
+    };
+    ledc_channel_config(&left_channel_cfg);
+
+    ledc_channel_config_t right_channel_cfg = {
+        .gpio_num       = LED_RIGHT,
+        .speed_mode     = LEDC_MODE,
+        .channel        = RIGHT_CHANNEL,
+        .timer_sel      = RGB_TIMER,
+        .duty           = 0,
+        .hpoint         = 0
+    };
+    ledc_channel_config(&right_channel_cfg);
+
+    // Startup sequence
     startup();
 
     // Calibration
     printf("-- Beginning calibration --\n");
     float ax_cal = 0.0, ay_cal = 0.0, az_cal = 0.0, temp_cal = 0.0, gx_cal = 0.0, gy_cal = 0.0, gz_cal = 0.0;
-    calibration(&ax_cal, &ay_cal, &az_cal, &temp_cal, &gx_cal, &gy_cal, &gz_cal);
+    calibration(&ax_cal, 
+                &ay_cal, 
+                &az_cal, 
+                &temp_cal, 
+                &gx_cal, 
+                &gy_cal, 
+                &gz_cal);
 
     printf("-- Calibration complete-- \nAverage values:\n");
     printf("ax_cal = %.2f, ay_cal = %.2f, az_cal = %.2f, temp_cal = %.2f, gx_cal = %.2f, gy_cal = %.2f, gz_cal = %.2f\n\n", 
         ax_cal, ay_cal, az_cal, temp_cal, gx_cal, gy_cal, gz_cal);
+    
+    vTaskDelay(pdMS_TO_TICKS(2000));
 
     acc_pos acc_filter;
     init_acc_pos(&acc_filter);
+
 
     while (1) {
         gpio_set_level(MODE_PIN, rot_led_level);
@@ -165,7 +414,6 @@ void app_main(void) {
         // Accel: 16384 LSB/g
         // Gyro : 131 LSB/(°/s)
 
-        float acc_scale = 16384.0f;
         float ax_raw = -az / acc_scale; // Changing x and z to align board with component orientation
         float ay_raw =  ay / acc_scale;
         float az_raw =  ax / acc_scale;
@@ -235,14 +483,13 @@ void app_main(void) {
         // OLED pixel
         int ay_pixel = mapping(ay_g, -1.0, 1.0, 0.0, 128.0); // Forward-back
         int ax_pixel = mapping(ax_g, -1.0, 1.0, 0.0, 64.0); // Left-right
-        setPixel(ay_pixel, ax_pixel, true);    
-        oled_update();
+        // oled_fill(0x00);
+        oled_set_pixel(ay_pixel, ax_pixel, 1);
 
 
 
         printf("A[g] (x,y,z) = (%5.2f, %5.2f, %5.2f)\t G[dps] (x,y,z) = (%7.2f, %7.2f, %7.2f) \t | T=%5.2fC\n",
                ax_g, ay_g, az_g, gx_dps, gy_dps, gz_dps, temp_c);
-        // fflush(stdout);
     }
 }
 
@@ -287,36 +534,15 @@ void calibration(float *ax_ptr,
 }
 
 
-void init_acc_pos(acc_pos *f) {
+void init_acc_pos(acc_pos *f)
+{
     memset(f, 0, sizeof(acc_pos));
 }
+void acc_moving_avg_update(acc_pos *f, float ax, float ay, float az,
+                           float *ax_out, float *ay_out, float *az_out);
 
 
-void config_button() {
-    gpio_config_t io_conf_ins = {
-        .pin_bit_mask = (1ULL << BUTTON_PIN),
-        .mode = GPIO_MODE_INPUT,
-        .pull_up_en = GPIO_PULLUP_DISABLE,
-        .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        .intr_type = GPIO_INTR_NEGEDGE
-    };
-    gpio_config(&io_conf_ins);
-    gpio_install_isr_service(0);
-    gpio_isr_handler_add(BUTTON_PIN, interrupt_handler, NULL);
-}
-
-void config_mode_led() {
-    gpio_config_t io_conf = {
-        .pin_bit_mask = (1ULL << MODE_PIN),
-        .mode = GPIO_MODE_OUTPUT,
-        .pull_up_en = GPIO_PULLUP_DISABLE,
-        .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        .intr_type = GPIO_INTR_DISABLE
-    };
-    gpio_config(&io_conf);
-}
-
-void config_i2c_master() {
+void i2c_master_init() {
   i2c_config_t conf = {
       .mode = I2C_MODE_MASTER,
       .sda_io_num = I2C_SDA_PIN,
@@ -329,72 +555,6 @@ void config_i2c_master() {
   i2c_driver_install(I2C_PORT, conf.mode, 0, 0, 0);
 }
 
-void config_timer() {
-    gptimer_config_t timer_config = {
-        .clk_src = GPTIMER_CLK_SRC_DEFAULT,
-        .direction = GPTIMER_COUNT_UP,
-        .resolution_hz = 1 * 1000 * 1000,
-    };
-    gptimer_new_timer(&timer_config, &gptimer);
-    gptimer_enable(gptimer);
-    gptimer_start(gptimer);
-}
-
-void config_direction_channels() {
-    ledc_channel_config_t forward_channel_cfg = {
-        .gpio_num       = LED_FORWARD,
-        .speed_mode     = LEDC_MODE,
-        .channel        = FORWARD_CHANNEL,
-        .timer_sel      = RGB_TIMER,
-        .duty           = 0,
-        .hpoint         = 0
-    };
-    ledc_channel_config(&forward_channel_cfg);
-
-    ledc_channel_config_t backward_channel_cfg = {
-        .gpio_num       = LED_BACKWARD,
-        .speed_mode     = LEDC_MODE,
-        .channel        = BACKWARD_CHANNEL,
-        .timer_sel      = RGB_TIMER,
-        .duty           = 0,
-        .hpoint         = 0
-    };
-    ledc_channel_config(&backward_channel_cfg);
-
-    ledc_channel_config_t left_channel_cfg = {
-        .gpio_num       = LED_LEFT,
-        .speed_mode     = LEDC_MODE,
-        .channel        = LEFT_CHANNEL,
-        .timer_sel      = RGB_TIMER,
-        .duty           = 0,
-        .hpoint         = 0
-    };
-    ledc_channel_config(&left_channel_cfg);
-
-    ledc_channel_config_t right_channel_cfg = {
-        .gpio_num       = LED_RIGHT,
-        .speed_mode     = LEDC_MODE,
-        .channel        = RIGHT_CHANNEL,
-        .timer_sel      = RGB_TIMER,
-        .duty           = 0,
-        .hpoint         = 0
-    };
-    ledc_channel_config(&right_channel_cfg);
-}
-
-void config_led_timer() {
-    ledc_timer_config_t ledc_timer = {
-        .speed_mode       = LEDC_MODE,
-        .duty_resolution  = RGB_DUTY_RES,
-        .timer_num        = RGB_TIMER,
-        .freq_hz          = RGB_FREQUENCY,
-        .clk_cfg          = LEDC_AUTO_CLK
-    };
-    ledc_timer_config(&ledc_timer);
-}
-
-
-
 void mpu_write_reg(uint8_t reg, uint8_t val) {
   i2c_master_write_to_device(I2C_PORT, MPU_ADDR, (uint8_t[]){reg, val}, 2, pdMS_TO_TICKS(100));
 }
@@ -403,12 +563,20 @@ void mpu_read_reg(uint8_t reg, uint8_t *data, size_t len) {
   i2c_master_write_read_device(I2C_PORT, MPU_ADDR, &reg, 1, data, len, pdMS_TO_TICKS(100));
 }
 
+void oled_write_reg(uint8_t reg, uint8_t val) {
+  i2c_master_write_to_device(I2C_PORT, OLED_ADDR, (uint8_t[]){reg, val}, 2, pdMS_TO_TICKS(100));
+}
+
+void oled_read_reg(uint8_t reg, uint8_t *data, size_t len) {
+  i2c_master_write_read_device(I2C_PORT, OLED_ADDR, &reg, 1, data, len, pdMS_TO_TICKS(100));
+}
+
 int16_t be16(const uint8_t *p) {  // big-endian to int16
     return (int16_t)((p[0] << 8) | p[1]);
 }
 
 int mapping(float x, float in_min, float in_max, float out_min, float out_max){
-    return  fmax(fmin(((x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min), out_max), 0);
+    return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
 }
 
 void interrupt_handler()
@@ -495,90 +663,18 @@ void acc_moving_avg_update(acc_pos *f, float ax, float ay, float az,
 }
 
 
-void ssd1306_cmd(uint8_t cmd)
-{
-    i2c_cmd_handle_t h = i2c_cmd_link_create();
-    i2c_master_start(h);
-    i2c_master_write_byte(h, (OLED_ADDR << 1) | I2C_MASTER_WRITE, true);
-    i2c_master_write_byte(h, 0x00, true); // Control byte: command
-    i2c_master_write_byte(h, cmd, true);
-    i2c_master_stop(h);
-    i2c_master_cmd_begin(I2C_PORT, h, pdMS_TO_TICKS(100));
-    i2c_cmd_link_delete(h);
-}
 
-void oled_update()
-{
-    for (uint8_t page = 0; page < 8; page++) {
-        ssd1306_cmd(0xB0 + page);  // vælg page
-        ssd1306_cmd(0x00);         // column low
-        ssd1306_cmd(0x10);         // column high
-
-        i2c_cmd_handle_t h = i2c_cmd_link_create();
-        i2c_master_start(h);
-        i2c_master_write_byte(h, (OLED_ADDR << 1) | I2C_MASTER_WRITE, true);
-        i2c_master_write_byte(h, 0x40, true); // data mode
-
-        for (uint8_t x = 0; x < OLED_WIDTH; x++) {
-            i2c_master_write_byte(
-                h,
-                oled_buffer[page * OLED_WIDTH + x],
-                true
-            );
-        }
-
-        i2c_master_stop(h);
-        ESP_ERROR_CHECK(i2c_master_cmd_begin(I2C_PORT, h, pdMS_TO_TICKS(100)));
-        i2c_cmd_link_delete(h);
+void oled_send_commands(const uint8_t *cmds, size_t len) {
+    i2c_cmd_handle_t cmd = i2c_cmd_link_create();
+    i2c_master_start(cmd);
+    i2c_master_write_byte(cmd, (OLED_ADDR << 1) | I2C_MASTER_WRITE, true);
+    i2c_master_write_byte(cmd, 0x00, true);
+    i2c_master_write(cmd, cmds, len, true);
+    i2c_master_stop(cmd);
+    // i2c_master_cmd_begin(I2C_PORT, cmd, pdMS_TO_TICKS(50));
+    esp_err_t err = i2c_master_cmd_begin(I2C_PORT, cmd, pdMS_TO_TICKS(50));
+    if (err != ESP_OK) {
+        printf("OLED I2C error: %s\n", esp_err_to_name(err));
     }
+    i2c_cmd_link_delete(cmd);
 }
-
-void setPixel(uint8_t x, uint8_t y, bool on)
-{
-    if (x >= OLED_WIDTH || y >= OLED_HEIGHT)
-        return;
-
-    uint8_t page = y / 8;                     // hvilken page
-    uint8_t bit  = y % 8;                     // hvilket bit
-    uint16_t index = page * OLED_WIDTH + x;   // byte i buffer
-
-    if (on)
-        oled_buffer[index] |=  (1 << bit);    // tænd pixel
-    else
-        oled_buffer[index] &= ~(1 << bit);    // sluk pixel
-}
-
-
-void config_ssd1306()
-{
-    ssd1306_cmd(0xAE); // Display OFF
-
-    ssd1306_cmd(0xD5);
-    ssd1306_cmd(0x80);
-
-    ssd1306_cmd(0xA8);
-    ssd1306_cmd(0x3F);
-
-    ssd1306_cmd(0xD3);
-    ssd1306_cmd(0x00);
-
-    ssd1306_cmd(0x40);
-
-    ssd1306_cmd(0x8D);
-    ssd1306_cmd(0x14); // Charge pump ON
-
-    ssd1306_cmd(0xA1);
-    ssd1306_cmd(0xC8);
-
-    ssd1306_cmd(0xDA);
-    ssd1306_cmd(0x12);
-
-    ssd1306_cmd(0x81);
-    ssd1306_cmd(0x7F);
-
-    ssd1306_cmd(0xA4);
-    ssd1306_cmd(0xA6);
-
-    ssd1306_cmd(0xAF); // DISPLAY ON
-}
-
