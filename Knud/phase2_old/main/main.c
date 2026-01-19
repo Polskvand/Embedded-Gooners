@@ -82,7 +82,7 @@ void oled_read_reg(uint8_t reg, uint8_t *data, size_t len);
 
 int16_t be16(const uint8_t *p);
 
-int mapping(float x, float in_min, float in_max, float out_min, float out_max);
+int mapping_RGB(float x, float in_min, float in_max, float out_min, float out_max);
 
 void startup();
 
@@ -163,17 +163,6 @@ void oled_set_position(uint8_t x, uint8_t page)
     oled_send_commands(cmds, sizeof(cmds));
 }
 
-void oled_set_pixel(uint8_t x, uint8_t y)
-{
-    uint8_t page = y / 8;
-    uint8_t bit  = y % 8;
-
-    oled_set_position(x, page);
-
-    uint8_t data = (1 << bit);
-    oled_send_data(&data, 1);
-}
-
 void oled_fill(uint8_t value)
 {
     for (uint8_t page = 0; page < 8; page++)
@@ -200,6 +189,7 @@ void app_main(void) {
         .pin_bit_mask = (1ULL << MODE_PIN),
         .mode = GPIO_MODE_OUTPUT,
         .pull_up_en = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
         .intr_type = GPIO_INTR_DISABLE
     };
@@ -278,13 +268,10 @@ void app_main(void) {
 
 
     oled_fill(0xFF);   // Entire screen ON
-    vTaskDelay(pdMS_TO_TICKS(1000));
+    vTaskDelay(pdMS_TO_TICKS(2000));
     oled_fill(0x00);   // Entire screen OFF
-    vTaskDelay(pdMS_TO_TICKS(1000));;
-    oled_set_pixel(20, 20);
-    vTaskDelay(pdMS_TO_TICKS(1000));
-    oled_fill(0x00);   // Entire screen OFF
-    vTaskDelay(pdMS_TO_TICKS(1000));
+    vTaskDelay(pdMS_TO_TICKS(2000));
+    oled_fill(0xFF);   // Entire screen ON
 
 
 
@@ -417,7 +404,7 @@ void app_main(void) {
         float ax_g, ay_g, az_g;
 
         acc_moving_avg_update(&acc_filter,
-                            ax_raw - (-az_cal), ay_raw - ay_cal, az_raw - ax_cal + 1, // az_raw - ax_cal + 1 to orient z axis up
+                            ax_raw - (-az_cal), ay_raw - ay_cal, az_raw - ax_cal + 1, // az_raw - az_cal + 1 to orient z axis up
                             &ax_g, &ay_g, &az_g);
 
         float gx_dps = (-gz / 131.0f) - (-gz_cal);
@@ -431,22 +418,22 @@ void app_main(void) {
             // In acceleration mode
             // FORWARD_BACKWARDS
             if (ay_g < 0) {
-                int ay_g_int = mapping(ay_g, -1.0, 0.0, 0.0, 511.0);
+                int ay_g_int = mapping_RGB(ay_g, -1.0, 0.0, 0.0, 511.0);
                 set_LED(BACKWARD_CHANNEL, 511 - ay_g_int);
                 set_LED(FORWARD_CHANNEL, 1);
             } else {
-                int ay_g_int = mapping(ay_g, 0.0, 1.0, 0.0, 511.0);
+                int ay_g_int = mapping_RGB(ay_g, 0.0, 1.0, 0.0, 511.0);
                 set_LED(BACKWARD_CHANNEL, 1);
                 set_LED(FORWARD_CHANNEL, ay_g_int);
             }
             
             // LEFT-RIGHT
             if (ax_g < 0) {
-                int ax_g_int = mapping(ax_g, -1.0, 0.0, 0.0, 511.0);
+                int ax_g_int = mapping_RGB(ax_g, -1.0, 0.0, 0.0, 511.0);
                 set_LED(LEFT_CHANNEL, 511 - ax_g_int);
                 set_LED(RIGHT_CHANNEL, 1);
             } else {
-                int ax_g_int = mapping(ax_g, 0.0, 1.0, 0.0, 511.0);
+                int ax_g_int = mapping_RGB(ax_g, 0.0, 1.0, 0.0, 511.0);
                 set_LED(LEFT_CHANNEL, 1);
                 set_LED(RIGHT_CHANNEL, ax_g_int);
             }
@@ -454,35 +441,25 @@ void app_main(void) {
             // In rotation mode
             // FORWARD-BACK
             if (gy_dps < 0) {
-                int gy_dps_int = mapping(gy_dps, -250.0, 0.0, 0.0, 511.0);
+                int gy_dps_int = mapping_RGB(gy_dps, -250.0, 0.0, 0.0, 511.0);
                 set_LED(LEFT_CHANNEL, 511 - gy_dps_int);
                 set_LED(RIGHT_CHANNEL, 1);
             } else {
-                int gy_dps_int = mapping(gy_dps, 0.0, 250.0, 0.0, 511.0);
+                int gy_dps_int = mapping_RGB(gy_dps, 0.0, 250.0, 0.0, 511.0);
                 set_LED(LEFT_CHANNEL, 1);
                 set_LED(RIGHT_CHANNEL, gy_dps_int);
             }
             
             // LEFT-RIGHT
             if (gx_dps < 0) {
-                int gx_dps_int = mapping(gx_dps, -250.0, 0.0, 0.0, 511.0);
+                int gx_dps_int = mapping_RGB(gx_dps, -250.0, 0.0, 0.0, 511.0);
                 set_LED(FORWARD_CHANNEL, 511 - gx_dps_int);
             } else {
-                int gx_dps_int = mapping(gx_dps, 0.0, 250.0, 0.0, 511.0);
+                int gx_dps_int = mapping_RGB(gx_dps, 0.0, 250.0, 0.0, 511.0);
                 set_LED(FORWARD_CHANNEL, 1);
                 set_LED(BACKWARD_CHANNEL, gx_dps_int);
             }
         }
-
-
-
-        // OLED pixel
-        int ay_pixel = mapping(ay_g, -1.0, 1.0, 0.0, 128.0); // Forward-back
-        int ax_pixel = mapping(ax_g, -1.0, 1.0, 0.0, 64.0); // Left-right
-        // oled_fill(0x00);
-        oled_set_pixel(ay_pixel, ax_pixel);
-
-
 
         printf("A[g] (x,y,z) = (%5.2f, %5.2f, %5.2f)\t G[dps] (x,y,z) = (%7.2f, %7.2f, %7.2f) \t | T=%5.2fC\n",
                ax_g, ay_g, az_g, gx_dps, gy_dps, gz_dps, temp_c);
@@ -571,7 +548,7 @@ int16_t be16(const uint8_t *p) {  // big-endian to int16
     return (int16_t)((p[0] << 8) | p[1]);
 }
 
-int mapping(float x, float in_min, float in_max, float out_min, float out_max){
+int mapping_RGB(float x, float in_min, float in_max, float out_min, float out_max){
     return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
 }
 
@@ -664,6 +641,7 @@ void oled_send_commands(const uint8_t *cmds, size_t len) {
     i2c_cmd_handle_t cmd = i2c_cmd_link_create();
     i2c_master_start(cmd);
     i2c_master_write_byte(cmd, (OLED_ADDR << 1) | I2C_MASTER_WRITE, true);
+    printf("Test\n");
     i2c_master_write_byte(cmd, 0x00, true);
     i2c_master_write(cmd, cmds, len, true);
     i2c_master_stop(cmd);
