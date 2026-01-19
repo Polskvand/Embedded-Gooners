@@ -103,8 +103,9 @@ void oled_update();
 
 void setPixel(uint8_t x, uint8_t y, bool on);
 
-void startup(float *ax_ptr, float *ay_ptr, float *az_ptr, float *temp_ptr, float *gx_ptr, float *gy_ptr, float *gz_ptr);
+void turn_on_all();
 
+void turn_off_all();
 
 // TODO: More comments (english) - Remove obvious Chad comments
 void app_main(void) {
@@ -125,15 +126,23 @@ void app_main(void) {
     mpu_write_reg(REG_PWR_MGMT_1, 0x80);
     vTaskDelay(pdMS_TO_TICKS(10));
     // Wake MPU (clear sleep bit)
-    mpu_write_reg(REG_PWR_MGMT_1, 0x00);
+    mpu_write_reg(REG_PWR_MGMT_1, 0x00); 
     
+    turn_on_all(); // Startup begins
+
+    // Calibration
+    printf("-- Beginning calibration --\n");
+    float ax_cal = 0.0, ay_cal = 0.0, az_cal = 0.0, temp_cal = 0.0, gx_cal = 0.0, gy_cal = 0.0, gz_cal = 0.0;
+    calibration(&ax_cal, &ay_cal, &az_cal, &temp_cal, &gx_cal, &gy_cal, &gz_cal);
+
+    printf("-- Calibration complete-- \nAverage values:\n");
+    printf("ax_cal = %.2f, ay_cal = %.2f, az_cal = %.2f, temp_cal = %.2f, gx_cal = %.2f, gy_cal = %.2f, gz_cal = %.2f\n\n", 
+        ax_cal, ay_cal, az_cal, temp_cal, gx_cal, gy_cal, gz_cal);
+
+    turn_off_all(); // Startup ends
+
     acc_pos acc_filter;
     init_acc_pos(&acc_filter);
-    
-    float ax_cal, ay_cal, az_cal, temp_cal, gx_cal, gy_cal, gz_cal;
-    startup(&ax_cal, &ay_cal, &az_cal, &temp_cal, &gx_cal, &gy_cal, &gz_cal);
-
-
 
     while (1) {
         gpio_set_level(MODE_PIN, rot_led_level);
@@ -538,27 +547,13 @@ void config_ssd1306()
     ssd1306_cmd(0xAF); // DISPLAY ON
 }
 
-void startup(float *ax_cal, 
-                 float *ay_cal, 
-                 float *az_cal, 
-                 float *temp_cal, 
-                 float *gx_cal, 
-                 float *gy_cal, 
-                 float *gz_cal) {
-    printf("When all LEDS are turned off, device is ready for use\n");
+void turn_on_all() {
     // Turn on all LEDs
     set_LED(FORWARD_CHANNEL, 511), set_LED(BACKWARD_CHANNEL, 511), set_LED(LEFT_CHANNEL, 511), set_LED(RIGHT_CHANNEL, 511), gpio_set_level(MODE_PIN, 1);
+    printf("Wait for all LEDs to turn off before using the device\n");
+}
 
-    // Calibration
-    printf("-- Beginning calibration --\n");
-    calibration(ax_cal, ay_cal, az_cal, temp_cal, gx_cal, gy_cal, gz_cal);
-
-    
-
-    printf("-- Calibration complete-- \nAverage values:\n");
-    printf("ax_cal = %.2f, ay_cal = %.2f, az_cal = %.2f, temp_cal = %.2f, gx_cal = %.2f, gy_cal = %.2f, gz_cal = %.2f\n\n", 
-        *ax_cal, *ay_cal, *az_cal, *temp_cal, *gx_cal, *gy_cal, *gz_cal);
-    
+void turn_off_all() {
     // Turn off all LEDs
     set_LED(FORWARD_CHANNEL, 0), set_LED(BACKWARD_CHANNEL, 0), set_LED(LEFT_CHANNEL, 0), set_LED(RIGHT_CHANNEL, 0), gpio_set_level(MODE_PIN, 0);
     printf("Device is now ready for use!\n");
