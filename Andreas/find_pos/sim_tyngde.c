@@ -9,8 +9,16 @@ int main(){
         step(&gyro.x, 0);
         step(&gyro.y, 0);
         step(&gyro.z, 1);
-        printf("a:(%3f %3f %3f)\t\tv:(%3f %3f %3f)\t\tp:(%3f %3f %3f)\t\t\n", gyro.x.a, gyro.y.a, gyro.z.a,
-                                                                            gyro.x.v, gyro.y.v, gyro.z.v,
-                                                                            gyro.x.p, gyro.y.p, gyro.z.p);
+
+        printf(
+            "\ra:(%6.3f %6.3f %6.3f)\t"
+            "v:(%6.3f %6.3f %6.3f)\t"
+            "p:(%6.3f %6.3f %6.3f)",
+            gyro.x.a, gyro.y.a, gyro.z.a,
+            gyro.x.v, gyro.y.v, gyro.z.v,
+            gyro.x.p, gyro.y.p, gyro.z.p
+        );
+
+        fflush(stdout);
     }
 }
