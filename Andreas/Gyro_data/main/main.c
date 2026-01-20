@@ -24,6 +24,7 @@
 // MPU6050 registre
 #define REG_PWR_MGMT_1     0x6B
 #define REG_ACCEL_XOUT     0x3B
+#define REG_ACCEL_CONFIG   0x1C
 
 #define LED_FORWARD     GPIO_NUM_1
 #define LED_BACKWARD    GPIO_NUM_9
@@ -174,7 +175,6 @@ void app_main(void) {
 
         // Temperatur: (temp/340) + 36.53 (ifølge datasheet)
         float temp_c = (temp / 340.0f) + 36.53f; // set - temp_cal for current temperature deviation instead of reading
-
 
         // TODO: Turn into a function or switch thingy 
         if (rotation_acceleration_swtich) {
