@@ -12,7 +12,7 @@ void init_Axis(Axis_state *axis) {axis->pos = axis->vel = axis->acc = .0f;}
 
 void init_Gyro(Gyro_state *gs){
     init_Axis(&gs->x); init_Axis(&gs->y); init_Axis(&gs->z);
-    memset(gs->visited, 0, sizeof(gs->visited));
+    memset(gs->oled_buffer, 0, sizeof(gs->oled_buffer));
     gs->last_cell = (Point){(int)gs->x.pos, (int)gs->y.pos};
 }
 
@@ -24,14 +24,17 @@ void step_Axis(Axis_state *axis, float acc_new){
     axis->acc = acc_new;
 }
 
-int get_Idx(int x, int y){
-    return y * 128 + x;
-}
+void setPixel(Gyro_state *gs, bool on){
+    if (gs->x.pos >= 128 || gs->y.pos >= 64) return;
 
-void log_Point(Gyro_state *gs){
-    if (gs->x.pos == gs->last_cell.x && gs->y.pos == gs->last_cell.y) return;
-    int idx = get_Idx(gs->x.pos, gs->y.pos);
-    if(gs->visited[idx]) gs->visited[idx] = 1;
+    uint8_t page = (int)gs->y.pos / 8;                     // hvilken page
+    uint8_t bit  = (int)gs->y.pos % 8;                     // hvilket bit
+    uint16_t index = page * 128 + gs->x.pos;   // byte i buffer
+
+    if(on){
+        gs->oled_buffer[index] |=  (1 << bit);
+    } else
+        gs->oled_buffer[index] &= ~(1 << bit);
 }
 
 int select_G(int current){
@@ -65,4 +68,5 @@ int select_G(int current){
         usleep(20000);
     }
 }
+
 

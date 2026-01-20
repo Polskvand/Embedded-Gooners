@@ -49,7 +49,9 @@ int main(void){
 
         step_Axis(&g[active].x, ax);
         step_Axis(&g[active].y, ay);
-        log_Point(&g[active]);
+
+        setPixel(&g[active], 1);
+
 
         clear();
         mvprintw(0, 0, "Arrows move | SPACE select player | q quit");
