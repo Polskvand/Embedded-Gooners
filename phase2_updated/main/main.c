@@ -116,14 +116,9 @@ void oled_update();
 
 void setPixel(uint8_t x, uint8_t y, bool on);
 
-<<<<<<< HEAD
-void turn_on_all();
-=======
 static inline void drive_axis(float value, float max_value, int neg_channel, int pos_channel);
 
->>>>>>> 0fdcc1a2daa4a2e1671251b6831b78403eec1d2d
 
-void turn_off_all();
 
 // TODO: More comments (english) - Remove obvious Chad comments
 void app_main(void) {
@@ -146,8 +141,6 @@ void app_main(void) {
     // Wake MPU (clear sleep bit)
     mpu_write_reg(REG_PWR_MGMT_1, 0x00);    
 
-    turn_on_all(); // Startup begins
-
     // Calibration
     printf("-- Beginning calibration --\n");
     float ax_cal = 0.0, ay_cal = 0.0, az_cal = 0.0, temp_cal = 0.0, gx_cal = 0.0, gy_cal = 0.0, gz_cal = 0.0;
@@ -157,8 +150,7 @@ void app_main(void) {
     printf("ax_cal = %.2f, ay_cal = %.2f, az_cal = %.2f, temp_cal = %.2f, gx_cal = %.2f, gy_cal = %.2f, gz_cal = %.2f\n\n", 
         ax_cal, ay_cal, az_cal, temp_cal, gx_cal, gy_cal, gz_cal);
 
-    turn_off_all(); // Startup ends    
-
+    // TODO: Make indicator to tell the user that it is calibrated and ready
 
     acc_pos acc_filter;
     init_acc_pos(&acc_filter);
@@ -556,19 +548,6 @@ void config_ssd1306()
     ssd1306_cmd(0xAF); // DISPLAY ON
 }
 
-<<<<<<< HEAD
-void turn_on_all() {
-    // Turn on all LEDs
-    set_LED(FORWARD_CHANNEL, 511), set_LED(BACKWARD_CHANNEL, 511), set_LED(LEFT_CHANNEL, 511), set_LED(RIGHT_CHANNEL, 511), gpio_set_level(MODE_PIN, 1);
-    printf("Wait for all LEDs to turn off before using the device\n");
-}
-
-void turn_off_all() {
-    // Turn off all LEDs
-    set_LED(FORWARD_CHANNEL, 0), set_LED(BACKWARD_CHANNEL, 0), set_LED(LEFT_CHANNEL, 0), set_LED(RIGHT_CHANNEL, 0), gpio_set_level(MODE_PIN, 0);
-    printf("Device is now ready for use!\n");
-}
-=======
 static inline void drive_axis(float value, float max_value, int neg_channel, int pos_channel) {
     float mag = fabsf(value);
     if (mag > max_value) mag = max_value;
@@ -600,4 +579,3 @@ void step(Axis_state *axis, float acc_new){
 }
 
 
->>>>>>> 0fdcc1a2daa4a2e1671251b6831b78403eec1d2d
