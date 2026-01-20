@@ -31,8 +31,9 @@
 #define LED_LEFT        GPIO_NUM_7
 #define LED_RIGHT       GPIO_NUM_0
 
-#define BUTTON_PIN      GPIO_NUM_4
-#define BUTTON_PIN_2    GPIO_NUM_10
+#define BUTTON_PIN_1    GPIO_NUM_10
+#define BUTTON_PIN_2    GPIO_NUM_3
+#define BUTTON_PIN_3    GPIO_NUM_2
 #define MODE_PIN        GPIO_NUM_19
 
 #define LEDC_MODE       LEDC_LOW_SPEED_MODE
@@ -73,8 +74,18 @@ typedef struct{
     Axis_state x, y, z;
 } gyro_state;
 
+typedef struct {float pos, vel, acc;} Axis_state2;
+typedef struct {int x, y;} Point;
+typedef struct {
+    Axis_state2 x, y, z;
+    Point last_cell;
+    uint8_t visited[128 * 64];
+} Gyro_state2;
+
 bool rot_led_level = false;
 bool rotation_acceleration_swtich = true;
+volatile bool clear_screen = false;
+volatile bool switch_active = false;
 uint64_t count;
 gptimer_handle_t gptimer = NULL;
 uint8_t oled_buffer[OLED_WIDTH * (OLED_HEIGHT / 8)] = {0};
@@ -90,6 +101,7 @@ void config_led_timer();
 void config_ssd1306();
 
 void init_acc_pos(acc_pos *f);
+
 void init_gyro(gyro_state *gyro, float ax0, float ay0, float az0);
 
 void step(Axis_state *axis, float acc_new);
@@ -106,7 +118,11 @@ int mapping(float x, float in_min, float in_max, float out_min, float out_max);
 
 void calibration(float *ax_ptr, float *ay_ptr, float *az_ptr, float *temp_ptr, float *gx_ptr, float *gy_ptr, float *gz_ptr);
 
-void interrupt_handler();
+void interrupt_handler_1();
+
+void interrupt_handler_2();
+
+void interrupt_handler_3();
 
 void set_LED(int CHANNEL, int value);
 
@@ -124,8 +140,21 @@ void turn_on_all();
 
 void turn_off_all();
 
+void init_Axis(Axis_state2 *axis);
+
+void init_Gyro(Gyro_state2 *gs);
+
+void step_Axis(Axis_state2 *axis, float acc_new);
+
+int get_Idx(int x, int y);
+
+void log_Point(Gyro_state2 *gs);
+
+
+
 // TODO: More comments (english) - Remove obvious Chad comments
 void app_main(void) {
+    printf("Hello\n");
     i2c_driver_delete(I2C_PORT);
     vTaskDelay(pdMS_TO_TICKS(10));
 
@@ -136,6 +165,8 @@ void app_main(void) {
     config_led_timer();
     config_direction_channels();
     config_ssd1306();
+
+    oled_clear();
 
     gptimer_get_raw_count(gptimer, &count);
 
@@ -165,8 +196,41 @@ void app_main(void) {
     gyro_state gyro;
     init_gyro(&gyro, 0, 0, 1);
 
+    // // Comment
+    // Gyro_state2 g[3];
+    // for(int i = 0; i < 3; i++){
+    //     init_Gyro(&g[i]);
+    // }
+
+    int active = 0;
+
     while (1) {
-        int button_2_pressed = gpio_get_level(BUTTON_PIN_2);
+        // printf("%d\n", clear_screen);
+        // printf("%d\n", gpio_get_level(BUTTON_PIN_2));
+        if (clear_screen) {
+            oled_clear();
+            clear_screen = !clear_screen;
+
+            gyro.x.p = 0.0;
+            gyro.y.p = 0.0;
+            gyro.z.p = 0.0;
+            // g[active].x.pos = 0.0;
+            // g[active].y.pos = 0.0;
+            // g[active].z.pos = 0.0;
+        }
+
+        // if (switch_active) {
+        //     active += 1;
+        //     active %= 3;
+        //     switch_active = !switch_active;
+        //     for (int x=0; x < 128; x++) {
+        //         for (int y=0; y < 64; y++) {
+        //             int idx_here = get_Idx(x, y);
+        //             setPixel(x, y, g[active].visited[idx_here]);
+        //         }
+        //     }
+        // }
+        
 
         gpio_set_level(MODE_PIN, rot_led_level);
 
@@ -216,11 +280,11 @@ void app_main(void) {
 
 
 
-        // OLED pixel
-        int ay_pixel = mapping(ay_g, -1.0, 1.0, 0.0, 128.0); // Forward-back
-        int ax_pixel = mapping(ax_g, -1.0, 1.0, 0.0, 64.0); // Left-right
-        // setPixel(ay_pixel, ax_pixel, true);    
-        // oled_update();
+        // // OLED pixel
+        // int ay_pixel = mapping(ay_g, -1.0, 1.0, 0.0, 128.0); // Forward-back
+        // int ax_pixel = mapping(ax_g, -1.0, 1.0, 0.0, 64.0); // Left-right
+        // // setPixel(ay_pixel, ax_pixel, true);    
+        // // oled_update();
 
 
         // TODO: Få flushed
@@ -228,34 +292,40 @@ void app_main(void) {
         //        ax_g, ay_g, az_g, gx_dps, gy_dps, gz_dps, temp_c);
         // fflush(stdout);
 
-        ESP_LOGI("IMU",
-            "A[g]=(%5.2f,%5.2f,%5.2f) G[dps]=(%7.2f,%7.2f,%7.2f) T=%5.2fC",
-            ax_g, ay_g, az_g, gx_dps, gy_dps, gz_dps, temp_c);
+        // ESP_LOGI("IMU",
+        //     "A[g]=(%5.2f,%5.2f,%5.2f) G[dps]=(%7.2f,%7.2f,%7.2f) T=%5.2fC",
+        //     ax_g, ay_g, az_g, gx_dps, gy_dps, gz_dps, temp_c);
 
 
         step(&gyro.x, ax_g);
         step(&gyro.y, ay_g);
         step(&gyro.z, az_g - 1); // Food for thought. 
 
+        // step_Axis(&g[active].x, ax_g);
+        // step_Axis(&g[active].y, ay_g);
+        // log_Point(&g[active]);
+
         printf(
-            "a:(%6.3f %6.3f %6.3f)\t"
+            "%d, a:(%6.3f %6.3f %6.3f)\t"
             "v:(%6.3f %6.3f %6.3f)\t"
             "p:(%6.3f %6.3f %6.3f)\n",
+            active,
             gyro.x.a, gyro.y.a, gyro.z.a,
             gyro.x.v, gyro.y.v, gyro.z.v,
             gyro.x.p, gyro.y.p, gyro.z.p
+            // g[active].x.acc, g[active].y.acc, g[active].z.acc,
+            // g[active].x.vel, g[active].y.vel, g[active].z.vel,
+            // g[active].x.pos, g[active].y.pos, g[active].z.pos
         );
 
         int pos_map_y = mapping(gyro.y.p, -5.0, 5.0, 0.0, 128.0);
         int pos_map_x = mapping(gyro.x.p, -5.0, 5.0, 0.0, 64.0);
+        // int pos_map_y = mapping(g[active].y.pos, -100.0, 100.0, 0.0, 128.0);
+        // int pos_map_x = mapping(g[active].x.pos, -100.0, 100.0, 0.0, 64.0);
 
         setPixel(pos_map_y, pos_map_x, true);    
         oled_update();
     }
-
-
-
-    // TODO: Implement positions with momentum
 }
 
 
@@ -306,7 +376,7 @@ void init_acc_pos(acc_pos *f) {
 
 void config_button() {
     gpio_config_t io_conf_ins = {
-        .pin_bit_mask = (1ULL << BUTTON_PIN) + (1ULL << BUTTON_PIN_2),
+        .pin_bit_mask = (1ULL << BUTTON_PIN_1) | (1ULL << BUTTON_PIN_2) | (1ULL << BUTTON_PIN_3),
         .mode = GPIO_MODE_INPUT,
         .pull_up_en = GPIO_PULLUP_DISABLE,
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
@@ -314,7 +384,9 @@ void config_button() {
     };
     gpio_config(&io_conf_ins);
     gpio_install_isr_service(0);
-    gpio_isr_handler_add(BUTTON_PIN, interrupt_handler, NULL);
+    gpio_isr_handler_add(BUTTON_PIN_1, interrupt_handler_1, (void *)BUTTON_PIN_1);
+    gpio_isr_handler_add(BUTTON_PIN_2, interrupt_handler_2, (void *)BUTTON_PIN_2);
+    gpio_isr_handler_add(BUTTON_PIN_3, interrupt_handler_3, (void *)BUTTON_PIN_3);
 }
 
 void config_mode_led() {
@@ -420,10 +492,10 @@ int16_t be16(const uint8_t *p) {  // big-endian to int16
 }
 
 int mapping(float x, float in_min, float in_max, float out_min, float out_max){
-    return  fmax(fmin(((x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min), out_max), 0);
+    return ((x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min);
 }
 
-void interrupt_handler()
+void interrupt_handler_1()
 {
     uint64_t new_count;
     gptimer_get_raw_count(gptimer, &new_count);
@@ -433,6 +505,27 @@ void interrupt_handler()
         count = new_count;
     }    
 }
+
+void interrupt_handler_2()
+{
+    uint64_t new_count;
+    gptimer_get_raw_count(gptimer, &new_count);
+    if ((new_count - count) > 500000) {
+        clear_screen = !clear_screen;
+        count = new_count;
+    }    
+}
+
+void interrupt_handler_3()
+{
+    uint64_t new_count;
+    gptimer_get_raw_count(gptimer, &new_count);
+    if ((new_count - count) > 500000) {
+        switch_active = !switch_active;
+        count = new_count;
+    }    
+}
+
 
 void set_LED(int CHANNEL, int value) {
     ledc_set_duty(LEDC_MODE, CHANNEL, value);
@@ -560,6 +653,7 @@ void config_ssd1306()
 void oled_clear() {
     memset(oled_buffer, 0x00, sizeof(oled_buffer));
     oled_update();
+    // printf("test\n");
 }
 
 void turn_on_all() {
@@ -573,6 +667,7 @@ void turn_off_all() {
     set_LED(FORWARD_CHANNEL, 0), set_LED(BACKWARD_CHANNEL, 0), set_LED(LEFT_CHANNEL, 0), set_LED(RIGHT_CHANNEL, 0), gpio_set_level(MODE_PIN, 0);
     printf("Device is now ready for use!\n");
 }
+
 static inline void drive_axis(float value, float max_value, int neg_channel, int pos_channel) {
     float mag = fabsf(value);
     if (mag > max_value) mag = max_value;
@@ -604,3 +699,28 @@ void step(Axis_state *axis, float acc_new){
 }
 
 
+void init_Axis(Axis_state2 *axis) {axis->pos = axis->vel = axis->acc = .0f;}
+
+void init_Gyro(Gyro_state2 *gs){
+    init_Axis(&gs->x); init_Axis(&gs->y); init_Axis(&gs->z);
+    memset(gs->visited, 0, sizeof(gs->visited));
+    gs->last_cell = (Point){(int)gs->x.pos, (int)gs->y.pos};
+}
+
+void step_Axis(Axis_state2 *axis, float acc_new){
+    float dt = 1.0f;
+    float vel_old = axis->vel * 0.95f;
+    axis->vel = vel_old + 0.5f * dt * (acc_new + axis->acc);
+    axis->pos = axis->pos + dt * vel_old + 0.25f * dt * dt * (axis->acc + acc_new);
+    axis->acc = acc_new;
+}
+
+int get_Idx(int x, int y){
+    return y * 128 + x;
+}
+
+void log_Point(Gyro_state2 *gs){
+    if (gs->x.pos == gs->last_cell.x && gs->y.pos == gs->last_cell.y) return;
+    int idx = get_Idx(gs->x.pos, gs->y.pos);
+    if(!(gs->visited[idx])) gs->visited[idx] = true;
+}
