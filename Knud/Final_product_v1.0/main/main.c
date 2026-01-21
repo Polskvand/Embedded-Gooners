@@ -357,7 +357,7 @@ void config_mode_led() {
     };
     gpio_config(&io_conf);
 }
-
+// Set ESP to master and what pins are data and clock
 void config_i2c_master() {
   i2c_config_t conf = {
       .mode = I2C_MODE_MASTER,
@@ -371,6 +371,7 @@ void config_i2c_master() {
   i2c_driver_install(I2C_PORT, conf.mode, 0, 0, 0);
 }
 
+// Configure timer for interrupts
 void config_timer() {
     gptimer_config_t timer_config = {
         .clk_src = GPTIMER_CLK_SRC_DEFAULT,
@@ -381,7 +382,7 @@ void config_timer() {
     gptimer_enable(gptimer);
     gptimer_start(gptimer);
 }
-
+// Configureations led channels used for PWM
 void config_direction_channels() {
     ledc_channel_config_t forward_channel_cfg = {
         .gpio_num       = LED_FORWARD,
@@ -423,7 +424,7 @@ void config_direction_channels() {
     };
     ledc_channel_config(&right_channel_cfg);
 }
-
+// Configureation of LED timer used for PWM
 void config_led_timer() {
     ledc_timer_config_t ledc_timer = {
         .speed_mode       = LEDC_MODE,
@@ -434,16 +435,16 @@ void config_led_timer() {
     };
     ledc_timer_config(&ledc_timer);
 }
-
+// Write value at register destination to the MPU6050
 void mpu_write_reg(uint8_t reg, uint8_t val) {
   i2c_master_write_to_device(I2C_PORT, MPU_ADDR, (uint8_t[]){reg, val}, 2, pdMS_TO_TICKS(100));
 }
-
+// Read from register and put it into the data with size len
 void mpu_read_reg(uint8_t reg, uint8_t *data, size_t len) {
   i2c_master_write_read_device(I2C_PORT, MPU_ADDR, &reg, 1, data, len, pdMS_TO_TICKS(100));
 }
-
-int16_t be16(const uint8_t *p) {  // big-endian to int16
+// Get values in big endian format
+int16_t be16(const uint8_t *p) { 
     return (int16_t)((p[0] << 8) | p[1]);
 }
 
@@ -520,7 +521,7 @@ void acc_moving_avg_update(acc_pos *f, float ax, float ay, float az,
     *az_out = f->az_sum / divisor;
 }
 
-
+// Write to display
 void ssd1306_cmd(uint8_t cmd) {
     i2c_cmd_handle_t h = i2c_cmd_link_create();
     i2c_master_start(h);
@@ -532,6 +533,7 @@ void ssd1306_cmd(uint8_t cmd) {
     i2c_cmd_link_delete(h);
 }
 
+// Push buffer to display
 void oled_update(Gyro_state *gs) {
     for (uint8_t page = 0; page < 8; page++) {
         ssd1306_cmd(0xB0 + page);  // select
