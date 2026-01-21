@@ -12,46 +12,46 @@
 #include "esp_rom_sys.h"
 #include "soc/gpio_reg.h"
 
-#define I2C_PORT        I2C_NUM_0
-#define I2C_SDA_PIN     GPIO_NUM_5
-#define I2C_SCL_PIN     GPIO_NUM_6
-#define I2C_FREQ_HZ     400000
+#define I2C_PORT            I2C_NUM_0
+#define I2C_SDA_PIN         GPIO_NUM_5
+#define I2C_SCL_PIN         GPIO_NUM_6
+#define I2C_FREQ_HZ         400000
 
-#define MPU_ADDR        0x68
+#define MPU_ADDR            0x68
 
-#define OLED_ADDR       0x3C
+#define OLED_ADDR           0x3C
 
 // MPU6050 registre
 #define REG_PWR_MGMT_1     0x6B
 #define REG_ACCEL_XOUT     0x3B
 #define REG_ACCEL_CONFIG   0x1C
 
-#define LED_FORWARD     GPIO_NUM_1
-#define LED_BACKWARD    GPIO_NUM_9
-#define LED_LEFT        GPIO_NUM_7
-#define LED_RIGHT       GPIO_NUM_0
+#define LED_FORWARD         GPIO_NUM_1
+#define LED_BACKWARD        GPIO_NUM_9
+#define LED_LEFT            GPIO_NUM_7
+#define LED_RIGHT           GPIO_NUM_0
 
-#define BUTTON_ROTATION    GPIO_NUM_10
-#define BUTTON_CLEAR    GPIO_NUM_3
-#define BUTTON_DRAW    GPIO_NUM_2 // Might want to change
-#define MODE_PIN        GPIO_NUM_19
+#define BUTTON_ROTATION     GPIO_NUM_10
+#define BUTTON_CLEAR        GPIO_NUM_3
+#define BUTTON_DRAW         GPIO_NUM_2
+#define MODE_PIN            GPIO_NUM_19
 
-#define LEDC_MODE       LEDC_LOW_SPEED_MODE
+#define LEDC_MODE           LEDC_LOW_SPEED_MODE
 
 #define FORWARD_CHANNEL     0
 #define BACKWARD_CHANNEL    1
 #define LEFT_CHANNEL        2
 #define RIGHT_CHANNEL       3
 
-#define RGB_TIMER       0
-#define RGB_DUTY_RES    9       // 9-bit resolution
-#define RGB_FREQUENCY   5000    // 5 kHz PWM
-#define AVG_WINDOW      5
+#define RGB_TIMER           0
+#define RGB_DUTY_RES        9       // 9-bit resolution
+#define RGB_FREQUENCY       5000    // 5 kHz PWM
+#define AVG_WINDOW          5
 
-#define LED_OFF         0
+#define LED_OFF             0
 
-#define OLED_WIDTH 128
-#define OLED_HEIGHT 64
+#define OLED_WIDTH          128
+#define OLED_HEIGHT         64
 
 typedef struct {
     float ax_buf[AVG_WINDOW];
@@ -65,7 +65,6 @@ typedef struct {
     uint8_t index;
     bool filled;
 } acc_pos;
-
 typedef struct {float pos, vel, acc;} Axis_state;
 typedef struct {int x, y;} Point;
 typedef struct {
@@ -74,11 +73,11 @@ typedef struct {
     uint8_t oled_buffer[128 * (64 / 8)];
 } Gyro_state;
 
-bool rot_led_level = false;
-bool rotation_acceleration_swtich = true;
+volatile bool rot_led_level = false;
+volatile bool rotation_acceleration_swtich = true;
 volatile bool clear_screen = false;
-// volatile bool switch_active = false; // For increased drawing profiles
 volatile bool draw_erase = true;
+// volatile bool switch_active = false; // For increased drawing profiles
 uint64_t count;
 gptimer_handle_t gptimer = NULL;
 
@@ -117,8 +116,11 @@ void setPixel(Gyro_state *gs, bool on);
 
 
 void app_main(void) {
+    // Needed to avoid needing to pull up pins from the board
     i2c_driver_delete(I2C_PORT);
     vTaskDelay(pdMS_TO_TICKS(10));
+
+    // Configure components
     config_i2c_master();
     config_mode_led();
     config_timer();
@@ -138,7 +140,7 @@ void app_main(void) {
 
     turn_on_all(); // Startup begins
 
-    // TODO: Startup sequence on display
+    // Future TODO: Startup sequence on display (text or shape to ensure it is on and running)
 
     // Calibration
     printf("-- Beginning calibration --\n");
@@ -160,7 +162,6 @@ void app_main(void) {
     for(int i = 0; i < 1; i++){
         init_Gyro(&g[i]);
     }
-
     int active = 0;
 
 
@@ -170,7 +171,7 @@ void app_main(void) {
             clear_screen = !clear_screen;
         }
 
-        // // Swtiching drawing profile. Only in case more ram is available
+        // // Swtiching drawing profile. Not currently working
         // if (switch_active) {
         //     switch_active = !switch_active;
         //     active += 1;
@@ -195,7 +196,6 @@ void app_main(void) {
         // Standard sensitivitet når den står i default (±2g og ±250°/s):
         // Accel: 16384 LSB/g
         // Gyro : 131 LSB/(°/s)
-
         float acc_scale = 16384.0f;
         float ax_raw = -az / acc_scale; // Changing x and z to align board with component orientation
         float ay_raw =  ay / acc_scale;
@@ -203,6 +203,7 @@ void app_main(void) {
 
         float ax_g, ay_g, az_g;
 
+        // Calculating moving average from measurements and calibrated values
         acc_moving_avg_update(&acc_filter,
                             ax_raw - (-az_cal), ay_raw - ay_cal, az_raw - ax_cal + 1, // az_raw - ax_cal + 1 to orient z axis up
                             &ax_g, &ay_g, &az_g);
@@ -224,11 +225,6 @@ void app_main(void) {
             drive_axis(gy_dps, 250.0f, LEFT_CHANNEL, RIGHT_CHANNEL);
             drive_axis(gx_dps, 250.0f, FORWARD_CHANNEL, BACKWARD_CHANNEL);
         }
-
-        // // Debug things
-        // ESP_LOGI("IMU",
-        //     "A[g]=(%5.2f,%5.2f,%5.2f) G[dps]=(%7.2f,%7.2f,%7.2f) T=%5.2fC",
-        //     ax_g, ay_g, az_g, gx_dps, gy_dps, gz_dps, temp_c);
 
         // Take steps on an axis
         step_Axis(&g[active].x, ay_g);
@@ -325,7 +321,7 @@ void calibration(float *ax_ptr,
     *gz_ptr     = gz   / (float)n_steps;
 }
 
-// Initialize running average
+// Initialize moving average
 void init_acc_pos(acc_pos *f) {
     memset(f, 0, sizeof(acc_pos));
 }
@@ -489,7 +485,7 @@ void set_LED(int CHANNEL, int value) {
     ledc_update_duty(LEDC_MODE, CHANNEL);
 }
 
-// Calculate running average
+// Calculate moving average
 void acc_moving_avg_update(acc_pos *f, float ax, float ay, float az,
                            float *ax_out, float *ay_out, float *az_out)
 {
@@ -559,7 +555,7 @@ void oled_update(Gyro_state *gs) {
 
 // Initializing the OLED display
 void config_ssd1306() {
-    ssd1306_cmd(0xAE); // Display OFF
+    ssd1306_cmd(0xAE);
 
     ssd1306_cmd(0xD5);
     ssd1306_cmd(0x80);
@@ -573,7 +569,7 @@ void config_ssd1306() {
     ssd1306_cmd(0x40);
 
     ssd1306_cmd(0x8D);
-    ssd1306_cmd(0x14); // Charge pump ON
+    ssd1306_cmd(0x14);
 
     ssd1306_cmd(0xA1);
     ssd1306_cmd(0xC8);
@@ -587,7 +583,7 @@ void config_ssd1306() {
     ssd1306_cmd(0xA4);
     ssd1306_cmd(0xA6);
 
-    ssd1306_cmd(0xAF); // DISPLAY ON
+    ssd1306_cmd(0xAF);
 }
 
 // Turn on all LEDs
