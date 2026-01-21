@@ -27,7 +27,7 @@ int main() {
     nodelay(stdscr, TRUE);
     curs_set(0);
 
-    struct timespec ts = { .tv_sec = 0, .tv_nsec = 3 * 1000 * 1000 }; // 100ms
+    struct timespec ts = { .tv_sec = 0, .tv_nsec = 10 * 1000 * 1000 }; // 100ms
 
     while (1) {
         int ch = getch();
@@ -81,20 +81,43 @@ int main() {
 
 exit:
     endwin();
+    int len0 = users[0].path_len;
+    int len1 = users[1].path_len;
+    int len2 = users[2].path_len;
 
-    // Print alle 3 brugeres historik i terminalen (uden ncurses)
-    for (int u = 0; u < NUM_USERS; u++) {
-        printf("\n=== User %d path (len=%d) ===\n", u + 1, users[u].path_len);
-        for (int i = 0; i < users[u].path_len; i++) {
-            printf("(%d, %d)\n", users[u].path[i].x, users[u].path[i].y);
+    int max_len = len0;
+    if (len1 > max_len) max_len = len1;
+    if (len2 > max_len) max_len = len2;
+
+    printf("\n=== Paths ===\n");
+    printf("U1 len=%d | U2 len=%d | U3 len=%d\n", len0, len1, len2);
+
+    for (int i = 0; i < max_len; i++) {
+        // User 1
+        if (i < len0) {
+            Point p = path_get(&users[0], i);
+            printf("User 1:(%d, %d)\t", p.x, p.y);
+        } else {
+            printf("User 1:( , )\t");
         }
-    }
 
-    // Husk at free dynamisk path for hver bruger
-    for (int i = 0; i < NUM_USERS; i++) {
-        free(users[i].path);
-        users[i].path = NULL;
-    }
+        // User 2
+        if (i < len1) {
+            Point p = path_get(&users[1], i);
+            printf("User 2:(%d, %d)\t", p.x, p.y);
+        } else {
+            printf("User 2:( , )\t");
+        }
 
+        // User 3
+        if (i < len2) {
+            Point p = path_get(&users[2], i);
+            printf("User 3:(%d, %d)", p.x, p.y);
+        } else {
+            printf("User 3:( , )");
+        }
+
+        printf("\n");
+    }
     return 0;
 }
